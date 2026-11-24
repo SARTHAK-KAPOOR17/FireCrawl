@@ -6,6 +6,7 @@ import { signupHandler, loginHandler, getMeHandler } from '../src/modules/auth/a
 import { validate } from '../src/middlewares/validate.js';
 import { authenticate } from '../src/middlewares/auth.js';
 import { signupSchema, loginSchema } from '../src/modules/auth/auth.validation.js';
+import { errorHandler } from '../src/exceptions/errorHandler.js';
 
 const mockResponse = () => {
   const res = {};
@@ -21,6 +22,13 @@ const mockResponse = () => {
   return res;
 };
 
+const createNext = (req, res) =>
+  jest.fn((err) => {
+    if (err) {
+      errorHandler(err, req, res, () => {});
+    }
+  });
+
 describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -30,39 +38,37 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
     it('fails validation on invalid email format', async () => {
       const req = { body: { email: 'not-an-email', password: 'validpassword123' } };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       validate(signupSchema)(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toBe('Validation failed');
-      expect(res.body.errors[0].field).toBe('email');
-      expect(next).not.toHaveBeenCalled();
+      expect(res.body.details[0].field).toBe('email');
     });
 
     it('fails validation if password is shorter than 8 characters', async () => {
       const req = { body: { email: 'user@example.com', password: 'short' } };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       validate(signupSchema)(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toBe('Validation failed');
-      expect(res.body.errors[0].field).toBe('password');
-      expect(next).not.toHaveBeenCalled();
+      expect(res.body.details[0].field).toBe('password');
     });
 
     it('passes validation when inputs are valid', async () => {
       const req = { body: { email: 'valid@example.com', password: 'validpassword123' } };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       validate(signupSchema)(req, res, next);
 
-      expect(next).toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith();
       expect(res.status).not.toHaveBeenCalled();
     });
   });
@@ -112,7 +118,7 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
         },
       };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await signupHandler(req, res, next);
 
@@ -174,7 +180,7 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
         },
       };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await loginHandler(req, res, next);
 
@@ -193,7 +199,7 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
         },
       };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await loginHandler(req, res, next);
 
@@ -220,7 +226,7 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
         },
       };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await loginHandler(req, res, next);
 
@@ -269,14 +275,13 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
     it('returns 401 when no token is provided', async () => {
       const req = { headers: {} };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toMatch(/no token provided/i);
-      expect(next).not.toHaveBeenCalled();
     });
 
     it('returns 401 when token is invalid or malformed', async () => {
@@ -286,14 +291,13 @@ describe('Email Auth Unit Tests (Validation, Handlers & Middlewares)', () => {
         },
       };
       const res = mockResponse();
-      const next = jest.fn();
+      const next = createNext(req, res);
 
       await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toMatch(/invalid or expired token/i);
-      expect(next).not.toHaveBeenCalled();
     });
   });
 });
