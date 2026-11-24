@@ -63,6 +63,10 @@ Located in `shared/src/exceptions/normalizeError.js`, this utility intercepts er
 
 ### 4. Worker Retry Policy & Run Tracking
 - **`retryPolicy`**: Inspects scraped errors. If an error is non-retryable (`!err.retryable`), it wraps the error in BullMQ's `UnrecoverableError` to immediately halt failed retries. Retryable errors are rethrown to leverage BullMQ exponential backoff.
-- **Atomic Failure Tracking**: On terminal failure, `runTracker.js` atomically updates `JobRun`:
+- **Atomic Failure Tracking & Efficiency Counters**:
   - `failureReasons`: Map of `code -> count` tracking failure categories.
   - `failedUrls`: Capped list (last 50) of `{ url, code, message }` entries using MongoDB `$slice: -50`.
+  - `cacheHits`: Atomically tracked on Redis HTML cache hits (bypassing network requests and rate limits).
+  - `duplicatesSkipped`: Atomically incremented when `ResultWriter` encounters duplicate `(jobId, url, contentHash)` keys.
+  - `robotsBlocked`: Atomically incremented when a URL is disallowed by `robots.txt` (`RobotsDisallowedError`). Recorded as `skipped` (not failed), consuming zero retry attempts and storing nothing.
+  - `RateLimitWaitTimeoutError`: Occurs when a domain's request rate is limited and exceeds `maxWaitMs` (30s) during wait. Being `retryable: true`, it triggers backoff retries rather than immediately failing terminally.

@@ -4,6 +4,7 @@ import { validate } from '../../middlewares/validate.js';
 import { asyncHandler } from '../../exceptions/asyncHandler.js';
 import {
   createJobSchema,
+  runJobSchema,
   paginationQuerySchema,
   resultsQuerySchema,
 } from './jobs.validation.js';
@@ -27,7 +28,7 @@ router.post('/', validate(createJobSchema), asyncHandler(createJob));
 router.get('/', validate(paginationQuerySchema), asyncHandler(getJobs));
 router.get('/:id', asyncHandler(getJobById));
 router.delete('/:id', asyncHandler(deleteJob));
-router.post('/:id/run', asyncHandler(runJob));
+router.post('/:id/run', validate(runJobSchema), asyncHandler(runJob));
 router.get('/:id/runs', asyncHandler(getJobRuns));
 router.get('/:id/results', validate(resultsQuerySchema), asyncHandler(getJobResults));
 
