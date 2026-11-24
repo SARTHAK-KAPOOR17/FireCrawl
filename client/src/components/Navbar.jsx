@@ -1,10 +1,12 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { LayoutDashboard, BarChart3, LogOut, Flame } from 'lucide-react';
 
 export function Navbar() {
   const { user, logout } = useAuth();
+  const { isConnected } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -53,8 +55,27 @@ export function Navbar() {
             </nav>
           </div>
 
-          {/* User profile & actions */}
+          {/* Connection status, User profile & actions */}
           <div className="flex items-center gap-4">
+            {/* Realtime status indicator */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                isConnected
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-50 text-slate-500 border-slate-200'
+              }`}
+              title={isConnected ? 'Connected to realtime Socket.io gateway' : 'Socket disconnected. Polling active.'}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                }`}
+              />
+              <span className="hidden sm:inline">
+                {isConnected ? 'Live' : 'Reconnecting, using polling'}
+              </span>
+            </div>
+
             {user && (
               <div className="flex items-center gap-3">
                 {user.avatarUrl ? (

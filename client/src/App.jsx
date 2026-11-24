@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -16,31 +17,33 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
-          <Routes>
-            {/* Public authentication routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
+        <SocketProvider>
+          <ToastProvider>
+            <Routes>
+              {/* Public authentication routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
-            {/* Protected dashboard layout */}
-            <Route
-              element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<Navigate to="/jobs" replace />} />
-              <Route path="/jobs" element={<JobsList />} />
-              <Route path="/jobs/new" element={<CreateJob />} />
-              <Route path="/jobs/:id" element={<JobDetail />} />
-              <Route path="/stats" element={<Stats />} />
-            </Route>
+              {/* Protected dashboard layout */}
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route path="/" element={<Navigate to="/jobs" replace />} />
+                <Route path="/jobs" element={<JobsList />} />
+                <Route path="/jobs/new" element={<CreateJob />} />
+                <Route path="/jobs/:id" element={<JobDetail />} />
+                <Route path="/stats" element={<Stats />} />
+              </Route>
 
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/jobs" replace />} />
-          </Routes>
-        </ToastProvider>
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/jobs" replace />} />
+            </Routes>
+          </ToastProvider>
+        </SocketProvider>
       </AuthProvider>
     </BrowserRouter>
   );
