@@ -164,6 +164,19 @@ export async function getJobRuns({ jobId, userId }) {
 }
 
 /**
+ * Get latest run for a job (snapshot for realtime resync)
+ */
+export async function getLatestJobRun({ jobId, userId }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  const latestRun = await JobRun.findOne({ jobId: job._id, userId }).sort({ startedAt: -1 });
+  return latestRun;
+}
+
+/**
  * List paginated results for a job with optional search and sort
  */
 export async function getJobResults({

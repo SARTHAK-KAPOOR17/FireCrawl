@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 
-export function setupProcessHandlers(server, { timeout = 5000 } = {}) {
-  const gracefulShutdown = (type, error) => {
+export function setupProcessHandlers(server, { timeout = 5000, closeRealtime = null } = {}) {
+  const gracefulShutdown = async (type, error) => {
     logger.error(
       { err: error?.stack || error?.message || error, type },
       'Fatal process error encountered. Initiating graceful shutdown.'
@@ -12,6 +12,12 @@ export function setupProcessHandlers(server, { timeout = 5000 } = {}) {
       process.exit(1);
     }, timeout);
     forceExitTimer.unref();
+
+    try {
+      if (typeof closeRealtime === 'function') {
+        await closeRealtime();
+      }
+    } catch (_) {}
 
     if (server && typeof server.close === 'function') {
       server.close(() => {

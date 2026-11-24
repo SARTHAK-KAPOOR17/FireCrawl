@@ -1,10 +1,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import http from 'http';
 import app from './app.js';
 import { logger } from './utils/logger.js';
 import { connectDB } from './config/db.js';
 import { connectRedis, redis } from './config/redis.js';
+import { initRealtime, closeRealtime } from './realtime/index.js';
 import { setupProcessHandlers } from './exceptions/processHandlers.js';
 
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -24,15 +26,26 @@ const startServer = async () => {
       logger.warn('Server starting without immediate Redis connection (is Docker running?)');
     }
 
-    const server = app.listen(PORT, () => {
+    const httpServer = http.createServer(app);
+
+    try {
+      await initRealtime(httpServer);
+    } catch (realtimeErr) {
+      logger.warn({ err: realtimeErr?.message }, 'Realtime Socket.io initialization deferred or degraded');
+    }
+
+    httpServer.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
     });
 
-    setupProcessHandlers(server);
+    setupProcessHandlers(httpServer, { closeRealtime });
 
     const shutdown = async (signal) => {
       logger.info(`${signal} received: closing HTTP server and connections`);
-      server.close(async () => {
+      try {
+        await closeRealtime();
+      } catch (_) {}
+      httpServer.close(async () => {
         try {
           await redis.quit();
         } catch (_) {}
