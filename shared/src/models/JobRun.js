@@ -1,5 +1,23 @@
 import mongoose from 'mongoose';
 
+const failedUrlSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    code: {
+      type: String,
+      required: true,
+    },
+    message: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const jobRunSchema = new mongoose.Schema(
   {
     jobId: {
@@ -44,6 +62,15 @@ const jobRunSchema = new mongoose.Schema(
     cacheHits: {
       type: Number,
       default: 0,
+    },
+    failureReasons: {
+      type: Map,
+      of: Number,
+      default: () => new Map(),
+    },
+    failedUrls: {
+      type: [failedUrlSchema],
+      default: () => [],
     },
     status: {
       type: String,

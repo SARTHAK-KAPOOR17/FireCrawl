@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { NoDataExtractedError } from '@scraper/shared';
 
 const USER_AGENT =
   process.env.USER_AGENT ||
@@ -48,7 +49,6 @@ export async function scrape({ url, selectors, html }) {
     const trimmedSelector = rawSelector.trim();
 
     if (trimmedSelector.includes('@')) {
-      // Attribute syntax: selector@attr (e.g. "a.link@href")
       const atIndex = trimmedSelector.lastIndexOf('@');
       const cssSelector = trimmedSelector.substring(0, atIndex).trim();
       const attrName = trimmedSelector.substring(atIndex + 1).trim();
@@ -64,7 +64,6 @@ export async function scrape({ url, selectors, html }) {
         }
       }
     } else {
-      // Text syntax: $(selector).first().text().trim()
       const el = $(trimmedSelector).first();
       if (el.length > 0) {
         const textVal = el.text().trim();
@@ -80,11 +79,8 @@ export async function scrape({ url, selectors, html }) {
     }
   }
 
-  // If a page returns no data for ALL fields, treat as failure
   if (!hasAnyData) {
-    const err = new Error('NO_DATA_EXTRACTED: Page returned no data for all fields');
-    err.code = 'NO_DATA_EXTRACTED';
-    throw err;
+    throw new NoDataExtractedError('Page returned no data for all fields');
   }
 
   return data;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import { NoDataExtractedError } from '@scraper/shared';
 import { scrape } from '../../worker/src/scrapers/staticScraper.js';
 
 const HTML_FIXTURE = `
@@ -88,6 +89,6 @@ describe('Static Scraper (worker/src/scrapers/staticScraper.js)', () => {
         },
         html: HTML_FIXTURE,
       })
-    ).rejects.toThrow('NO_DATA_EXTRACTED: Page returned no data for all fields');
+    ).rejects.toThrow(NoDataExtractedError);
   });
 });
