@@ -95,3 +95,16 @@ export const getJobResults = async (req, res) => {
     ...result,
   });
 };
+
+export const exportJobResults = async (req, res) => {
+  const format = req.query.format === 'csv' ? 'csv' : 'json';
+  const search = req.query.search || '';
+
+  await jobService.exportJobResults({
+    jobId: req.params.id,
+    userId: req.user._id,
+    format,
+    search,
+    res,
+  });
+};

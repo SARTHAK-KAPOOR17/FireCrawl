@@ -214,3 +214,114 @@ export async function getJobResults({
     totalPages: Math.ceil(total / limit) || 1,
   };
 }
+
+/**
+ * Sanitizes a single cell value for CSV export, escaping quotes, commas, newlines,
+ * and neutralizing CSV formula injection by prefixing =, +, -, @, \t, \r with a single quote.
+ * @param {any} val
+ * @returns {string}
+ */
+export function sanitizeCsvCell(val) {
+  if (val === null || val === undefined) return '';
+  let str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+
+  // Neutralize CSV formula injection: prefix cells starting with =, +, -, @, \t, \r with a single quote
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+
+  // Quote escaping: if string contains double quotes, commas, or newlines, enclose in quotes and escape internal quotes
+  if (/[",\n\r]/.test(str)) {
+    str = `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
+ * Streams job results as CSV or JSON using Mongoose cursor
+ */
+export async function exportJobResults({ jobId, userId, format = 'json', search = '', res }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  const query = { jobId: job._id };
+  if (search && search.trim()) {
+    const searchRegex = new RegExp(search.trim(), 'i');
+    const orConditions = [{ url: searchRegex }];
+
+    const selectorKeys =
+      job.selectors instanceof Map
+        ? Array.from(job.selectors.keys())
+        : typeof job.selectors?.toJSON === 'function'
+        ? Object.keys(job.selectors.toJSON())
+        : Object.keys(job.selectors || {});
+
+    for (const key of selectorKeys) {
+      orConditions.push({ [`data.${key}`]: searchRegex });
+    }
+    query.$or = orConditions;
+  }
+
+  const safeFilename = (job.name || 'job')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .slice(0, 50);
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}-results.csv"`);
+
+    let dataKeys =
+      job.selectors instanceof Map
+        ? Array.from(job.selectors.keys())
+        : typeof job.selectors?.toJSON === 'function'
+        ? Object.keys(job.selectors.toJSON())
+        : Object.keys(job.selectors || {});
+
+    try {
+      const keysAgg = await Result.aggregate([
+        { $match: query },
+        { $project: { keys: { $objectToArray: '$data' } } },
+        { $unwind: '$keys' },
+        { $group: { _id: null, allKeys: { $addToSet: '$keys.k' } } },
+      ]);
+      if (keysAgg[0]?.allKeys?.length) {
+        dataKeys = Array.from(new Set([...dataKeys, ...keysAgg[0].allKeys]));
+      }
+    } catch (_) {}
+
+    const columns = ['url', 'scrapedAt', ...dataKeys];
+    res.write(columns.map(sanitizeCsvCell).join(',') + '\n');
+
+    const cursor = Result.find(query).sort({ scrapedAt: -1 }).lean().cursor();
+    for await (const doc of cursor) {
+      const row = [
+        sanitizeCsvCell(doc.url),
+        sanitizeCsvCell(doc.scrapedAt ? new Date(doc.scrapedAt).toISOString() : ''),
+        ...dataKeys.map((k) => sanitizeCsvCell(doc.data?.[k])),
+      ];
+      res.write(row.join(',') + '\n');
+    }
+    res.end();
+  } else {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}-results.json"`);
+
+    res.write('[\n');
+    const cursor = Result.find(query).sort({ scrapedAt: -1 }).lean().cursor();
+    let isFirst = true;
+
+    for await (const doc of cursor) {
+      if (!isFirst) {
+        res.write(',\n');
+      }
+      isFirst = false;
+      res.write(JSON.stringify(doc));
+    }
+
+    res.write('\n]\n');
+    res.end();
+  }
+}
