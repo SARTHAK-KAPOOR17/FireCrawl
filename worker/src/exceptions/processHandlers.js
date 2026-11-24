@@ -1,6 +1,12 @@
 import { logger } from '../utils/logger.js';
 
-export function setupWorkerProcessHandlers({ worker, mongoose, redis, timeout = 5000 } = {}) {
+export function setupWorkerProcessHandlers({
+  worker,
+  mongoose,
+  redis,
+  resultWriter,
+  timeout = 5000,
+} = {}) {
   const gracefulShutdown = async (type, error) => {
     logger.error(
       { err: error?.stack || error?.message || error, type },
@@ -14,6 +20,9 @@ export function setupWorkerProcessHandlers({ worker, mongoose, redis, timeout = 
     forceTimer.unref();
 
     try {
+      if (resultWriter && typeof resultWriter.shutdown === 'function') {
+        await resultWriter.shutdown();
+      }
       if (worker && typeof worker.close === 'function') {
         await worker.close();
       }
