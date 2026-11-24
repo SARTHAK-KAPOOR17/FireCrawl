@@ -16,6 +16,7 @@ import {
   deleteJob,
   getJobRuns,
   getJobResults,
+  exportJobResults,
 } from './jobs.controller.js';
 
 const router = Router();
@@ -30,6 +31,7 @@ router.get('/:id', asyncHandler(getJobById));
 router.delete('/:id', asyncHandler(deleteJob));
 router.post('/:id/run', validate(runJobSchema), asyncHandler(runJob));
 router.get('/:id/runs', asyncHandler(getJobRuns));
+router.get('/:id/results/export', asyncHandler(exportJobResults));
 router.get('/:id/results', validate(resultsQuerySchema), asyncHandler(getJobResults));
 
 export default router;

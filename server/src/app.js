@@ -11,6 +11,7 @@ import { requestId } from './exceptions/requestId.js';
 import { notFoundHandler } from './exceptions/notFoundHandler.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import jobsRoutes from './modules/jobs/jobs.routes.js';
+import statsRoutes from './modules/stats/stats.routes.js';
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use('/auth', authRoutes);
 
 // Jobs routes
 app.use('/jobs', jobsRoutes);
+
+// Stats routes
+app.use('/stats', statsRoutes);
 
 // 404 handler for unknown routes
 app.use(notFoundHandler);
