@@ -3,9 +3,11 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { pinoHttp } from 'pino-http';
 import mongoose from 'mongoose';
+import passport from 'passport';
 import { logger } from './utils/logger.js';
 import { redis } from './config/redis.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import authRoutes from './modules/auth/auth.routes.js';
 
 const app = express();
 
@@ -13,13 +15,16 @@ const app = express();
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     credentials: true,
   })
 );
 app.use(pinoHttp({ logger }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Passport initialization (session: false)
+app.use(passport.initialize());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -36,6 +41,9 @@ app.get('/health', (req, res) => {
     },
   });
 });
+
+// Authentication routes
+app.use('/auth', authRoutes);
 
 // Centralized error handler
 app.use(errorHandler);

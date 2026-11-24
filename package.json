@@ -15,7 +15,8 @@
     "dev:server": "npm run dev --prefix server",
     "dev:worker": "npm run dev --prefix worker",
     "dev:client": "npm run dev --prefix client",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:worker\" \"npm run dev:client\""
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:worker\" \"npm run dev:client\"",
+    "test": "npm test --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
