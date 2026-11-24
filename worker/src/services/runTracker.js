@@ -8,7 +8,9 @@ import { logger } from '../utils/logger.js';
 export async function recordOutcomeAndFinalizeRun({
   jobId,
   runId,
+  url,
   outcome,
+  error = null,
   models = { Job, JobRun },
 }) {
   const { Job: JobModel, JobRun: JobRunModel } = models;
@@ -20,11 +22,33 @@ export async function recordOutcomeAndFinalizeRun({
       ? 'pagesSkipped'
       : 'pagesFailed';
 
-  const updatedRun = await JobRunModel.findByIdAndUpdate(
-    runId,
-    { $inc: { [incField]: 1 } },
-    { new: true }
-  );
+  const updateOps = {
+    $inc: {
+      [incField]: 1,
+    },
+  };
+
+  if (outcome === 'failed' && error) {
+    const code = error.code || 'UNKNOWN_ERROR';
+    updateOps.$inc[`failureReasons.${code}`] = 1;
+
+    if (url) {
+      updateOps.$push = {
+        failedUrls: {
+          $each: [
+            {
+              url,
+              code,
+              message: error.message || 'Scrape failed',
+            },
+          ],
+          $slice: -50,
+        },
+      };
+    }
+  }
+
+  const updatedRun = await JobRunModel.findByIdAndUpdate(runId, updateOps, { new: true });
 
   if (!updatedRun) {
     logger.warn({ runId }, 'JobRun not found when recording outcome');
