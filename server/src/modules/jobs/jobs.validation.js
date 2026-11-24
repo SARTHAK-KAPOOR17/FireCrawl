@@ -43,3 +43,7 @@ export const resultsQuerySchema = z.object({
   search: z.string().trim().optional(),
   sort: z.enum(['asc', 'desc']).default('desc').optional(),
 });
+
+export const applySuggestionsSchema = z.object({
+  fields: z.array(z.string().min(1)).min(1, 'Must provide at least 1 field to apply'),
+});

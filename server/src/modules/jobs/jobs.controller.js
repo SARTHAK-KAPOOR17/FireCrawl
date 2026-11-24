@@ -119,3 +119,37 @@ export const exportJobResults = async (req, res) => {
     res,
   });
 };
+
+export const getJobSuggestions = async (req, res) => {
+  const result = await jobService.getJobSuggestions({
+    jobId: req.params.id,
+    userId: req.user._id,
+  });
+  return res.status(200).json({
+    success: true,
+    ...result,
+  });
+};
+
+export const applyJobSuggestions = async (req, res) => {
+  const result = await jobService.applyJobSuggestions({
+    jobId: req.params.id,
+    userId: req.user._id,
+    fields: req.body.fields,
+  });
+  return res.status(200).json({
+    success: true,
+    ...result,
+  });
+};
+
+export const deleteJobSuggestions = async (req, res) => {
+  const result = await jobService.deleteJobSuggestions({
+    jobId: req.params.id,
+    userId: req.user._id,
+  });
+  return res.status(200).json({
+    success: true,
+    ...result,
+  });
+};

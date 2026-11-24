@@ -340,3 +340,77 @@ export async function exportJobResults({ jobId, userId, format = 'json', search 
     res.end();
   }
 }
+
+/**
+ * Get AI-suggested selectors for a job
+ */
+export async function getJobSuggestions({ jobId, userId }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+  const suggestedSelectors =
+    job.suggestedSelectors instanceof Map
+      ? Object.fromEntries(job.suggestedSelectors)
+      : job.suggestedSelectors || {};
+
+  return { suggestedSelectors };
+}
+
+/**
+ * Apply selected suggested selectors to job selectors
+ */
+export async function applyJobSuggestions({ jobId, userId, fields }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  const update = { $set: {}, $unset: {} };
+  let appliedCount = 0;
+
+  for (const field of fields) {
+    const suggestion = job.suggestedSelectors?.get
+      ? job.suggestedSelectors.get(field)
+      : job.suggestedSelectors?.[field];
+
+    if (suggestion && suggestion.selector) {
+      update.$set[`selectors.${field}`] = suggestion.selector;
+      update.$unset[`suggestedSelectors.${field}`] = '';
+      appliedCount++;
+    }
+  }
+
+  if (appliedCount > 0) {
+    const cleanUpdate = {};
+    if (Object.keys(update.$set).length > 0) cleanUpdate.$set = update.$set;
+    if (Object.keys(update.$unset).length > 0) cleanUpdate.$unset = update.$unset;
+
+    const updatedJob = await Job.findOneAndUpdate(
+      { _id: jobId, userId },
+      cleanUpdate,
+      { new: true }
+    );
+    return { success: true, job: updatedJob };
+  }
+
+  return { success: true, job };
+}
+
+/**
+ * Clear all suggested selectors for a job
+ */
+export async function deleteJobSuggestions({ jobId, userId }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  const updatedJob = await Job.findOneAndUpdate(
+    { _id: jobId, userId },
+    { $set: { suggestedSelectors: new Map() } },
+    { new: true }
+  );
+
+  return { success: true, suggestedSelectors: {}, job: updatedJob };
+}
