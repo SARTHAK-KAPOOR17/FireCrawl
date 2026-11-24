@@ -1,12 +1,32 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import Redis from 'ioredis';
 import { AppError } from '@scraper/shared';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
-const CONCURRENCY =
-  process.env.WORKER_CONCURRENCY ||
-  process.argv.find((arg) => arg.startsWith('--concurrency='))?.split('=')[1] ||
-  '1';
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  let concurrency = process.env.WORKER_CONCURRENCY || '5';
+  let label = 'Phase 3 Efficiency Benchmark';
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('--concurrency=')) {
+      concurrency = arg.split('=')[1];
+    } else if (arg === '--concurrency' && args[i + 1]) {
+      concurrency = args[++i];
+    } else if (arg.startsWith('--label=')) {
+      label = arg.split('=')[1];
+    } else if (arg === '--label' && args[i + 1]) {
+      label = args[++i];
+    }
+  }
+
+  return { concurrency, label };
+}
+
+const { concurrency: CONCURRENCY, label: BENCHMARK_LABEL } = parseArgs();
 
 const BENCHMARK_USER = {
   email: 'benchmark@example.com',
@@ -20,7 +40,6 @@ async function getAuthToken() {
     return signupRes.data.token;
   } catch (err) {
     if (err.response?.status === 409) {
-      // User exists, log in
       const loginRes = await axios.post(`${SERVER_URL}/auth/login`, {
         email: BENCHMARK_USER.email,
         password: BENCHMARK_USER.password,
@@ -61,8 +80,80 @@ async function collect100BookUrls() {
   return urls;
 }
 
+async function clearHtmlCache() {
+  const redis = new Redis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+    lazyConnect: true,
+  });
+
+  try {
+    await redis.connect();
+    let cursor = '0';
+    let clearedCount = 0;
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'htmlcache:*', 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await redis.del(...keys);
+        clearedCount += keys.length;
+      }
+    } while (cursor !== '0');
+    console.log(`Cleared ${clearedCount} HTML cache keys in Redis.`);
+  } catch (err) {
+    console.warn('Could not clear Redis cache (is Redis running?):', err.message);
+  } finally {
+    try {
+      await redis.quit();
+    } catch (_) {}
+  }
+}
+
+async function pollJobRunUntilComplete(token, jobId, runId) {
+  const startTime = Date.now();
+  let completedRun = null;
+
+  while (!completedRun) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const runsRes = await axios.get(`${SERVER_URL}/jobs/${jobId}/runs`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const currentRun = runsRes.data?.runs?.find((r) => r._id === runId) || runsRes.data?.runs?.[0];
+    if (currentRun) {
+      const processed =
+        (currentRun.pagesScraped || 0) +
+        (currentRun.pagesFailed || 0) +
+        (currentRun.pagesSkipped || 0);
+
+      process.stdout.write(
+        `\rProgress: ${processed}/${currentRun.totalUrls} | Scraped: ${currentRun.pagesScraped} | Failed: ${currentRun.pagesFailed} | Skipped: ${currentRun.pagesSkipped} | Hits: ${currentRun.cacheHits || 0} | Status: ${currentRun.status}`
+      );
+
+      if (currentRun.status !== 'running') {
+        completedRun = currentRun;
+        console.log('\n');
+      }
+    }
+  }
+
+  const durationMs =
+    completedRun.durationMs ||
+    (completedRun.finishedAt
+      ? new Date(completedRun.finishedAt).getTime() - new Date(completedRun.startedAt).getTime()
+      : Date.now() - startTime);
+
+  return {
+    ...completedRun,
+    durationMs,
+  };
+}
+
 async function runBenchmark() {
-  console.log(`=== FireCrawl Benchmark (Target Concurrency: ${CONCURRENCY}) ===`);
+  console.log(`=== FireCrawl Benchmark ===`);
+  console.log(`Label: ${BENCHMARK_LABEL}`);
+  console.log(`Target Concurrency: ${CONCURRENCY}`);
   console.log(`Server URL: ${SERVER_URL}`);
 
   try {
@@ -74,11 +165,14 @@ async function runBenchmark() {
       throw new AppError(`Expected 100 URLs, but only collected ${urls.length}`);
     }
 
-    console.log('Creating job and queuing scrape run...');
+    // --- COLD RUN ---
+    console.log('\n>>> Starting COLD run (clearing Redis HTML cache)...');
+    await clearHtmlCache();
+
     const createRes = await axios.post(
       `${SERVER_URL}/jobs`,
       {
-        name: `Benchmark 100 Books (Concurrency ${CONCURRENCY})`,
+        name: `Benchmark - ${BENCHMARK_LABEL} (Cold Run)`,
         urls,
         selectors: {
           title: 'h1',
@@ -87,70 +181,74 @@ async function runBenchmark() {
         },
         mode: 'static',
         runNow: true,
+        forceRefresh: false,
       },
       {
         headers: { Authorization: `Bearer ${token}` },
       }
     );
 
-    const { job, run } = createRes.data;
-    console.log(`Job Created: ID=${job._id}, Run ID=${run._id}`);
-    console.log('Polling run progress...');
+    const { job, run: coldRunInitial } = createRes.data;
+    console.log(`Job Created: ID=${job._id}, Cold Run ID=${coldRunInitial._id}`);
+    const coldRun = await pollJobRunUntilComplete(token, job._id, coldRunInitial._id);
 
-    const startTime = Date.now();
-    let completedRun = null;
-
-    while (!completedRun) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const runsRes = await axios.get(`${SERVER_URL}/jobs/${job._id}/runs`, {
+    // --- WARM RUN ---
+    console.log('\n>>> Starting WARM run (same job, reading from cache)...');
+    const warmStartRes = await axios.post(
+      `${SERVER_URL}/jobs/${job._id}/run`,
+      { forceRefresh: false },
+      {
         headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const currentRun = runsRes.data?.runs?.[0];
-      if (currentRun) {
-        const processed =
-          (currentRun.pagesScraped || 0) +
-          (currentRun.pagesFailed || 0) +
-          (currentRun.pagesSkipped || 0);
-
-        process.stdout.write(
-          `\rProgress: ${processed}/${currentRun.totalUrls} | Scraped: ${currentRun.pagesScraped} | Failed: ${currentRun.pagesFailed} | Skipped: ${currentRun.pagesSkipped} | Status: ${currentRun.status}`
-        );
-
-        if (currentRun.status !== 'running') {
-          completedRun = currentRun;
-          console.log('\n');
-        }
       }
-    }
+    );
 
-    const durationMs =
-      completedRun.durationMs ||
-      (completedRun.finishedAt
-        ? new Date(completedRun.finishedAt).getTime() -
-          new Date(completedRun.startedAt).getTime()
-        : Date.now() - startTime);
+    const warmRunInitial = warmStartRes.data.run;
+    console.log(`Warm Run ID=${warmRunInitial._id}`);
+    const warmRun = await pollJobRunUntilComplete(token, job._id, warmRunInitial._id);
 
-    const totalSeconds = (durationMs / 1000).toFixed(2);
-    const avgMsPerPage = (durationMs / completedRun.totalUrls).toFixed(1);
-    const pagesPerSec = (
-      completedRun.pagesScraped /
-      (durationMs / 1000 || 1)
+    // --- METRIC CALCULATIONS ---
+    const coldDurationSec = (coldRun.durationMs / 1000).toFixed(2);
+    const warmDurationSec = (warmRun.durationMs / 1000).toFixed(2);
+
+    const coldThroughput = (
+      (coldRun.pagesScraped || 0) / (coldRun.durationMs / 1000 || 1)
+    ).toFixed(2);
+    const warmThroughput = (
+      ((warmRun.pagesScraped || 0) + (warmRun.duplicatesSkipped || 0)) /
+      (warmRun.durationMs / 1000 || 1)
     ).toFixed(2);
 
+    const coldSuccessRate = (
+      ((coldRun.pagesScraped || 0) / (coldRun.totalUrls || 1)) *
+      100
+    ).toFixed(1);
+    const warmSuccessRate = (
+      (((warmRun.pagesScraped || 0) + (warmRun.pagesSkipped || 0)) / (warmRun.totalUrls || 1)) *
+      100
+    ).toFixed(1);
+
+    const coldHitRate = (
+      ((coldRun.cacheHits || 0) / (coldRun.totalUrls || 1)) *
+      100
+    ).toFixed(1);
+    const warmHitRate = (
+      ((warmRun.cacheHits || 0) / (warmRun.totalUrls || 1)) *
+      100
+    ).toFixed(1);
+
     console.log('\n### Benchmark Results\n');
-    console.log('| Metric | Value |');
-    console.log('|---|---|');
-    console.log(`| WORKER_CONCURRENCY | ${CONCURRENCY} |`);
-    console.log(`| Final Status | ${completedRun.status} |`);
-    console.log(`| Total Time | ${totalSeconds}s (${durationMs}ms) |`);
-    console.log(`| Total URLs | ${completedRun.totalUrls} |`);
-    console.log(`| Pages Scraped | ${completedRun.pagesScraped} |`);
-    console.log(`| Pages Failed | ${completedRun.pagesFailed} |`);
-    console.log(`| Pages Skipped | ${completedRun.pagesSkipped} |`);
-    console.log(`| Avg ms / Page | ${avgMsPerPage} ms |`);
-    console.log(`| Throughput | ${pagesPerSec} pages/sec |`);
-    console.log('\nBenchmark completed successfully.');
+    console.log(`**Label**: ${BENCHMARK_LABEL} | **Concurrency**: ${CONCURRENCY}\n`);
+    console.log('| Metric | Cold Run | Warm Run |');
+    console.log('| :--- | :--- | :--- |');
+    console.log(`| Total Time | ${coldDurationSec}s (${coldRun.durationMs}ms) | ${warmDurationSec}s (${warmRun.durationMs}ms) |`);
+    console.log(`| Throughput | ${coldThroughput} pages/sec | ${warmThroughput} pages/sec |`);
+    console.log(`| Success Rate | ${coldSuccessRate}% | ${warmSuccessRate}% |`);
+    console.log(`| Cache Hits | ${coldRun.cacheHits || 0} | ${warmRun.cacheHits || 0} |`);
+    console.log(`| Cache Hit Rate | ${coldHitRate}% | ${warmHitRate}% |`);
+    console.log(`| Duplicates Skipped | ${coldRun.duplicatesSkipped || 0} | ${warmRun.duplicatesSkipped || 0} |`);
+    console.log(`| Robots Blocked | ${coldRun.robotsBlocked || 0} | ${warmRun.robotsBlocked || 0} |`);
+    console.log(`| Status | ${coldRun.status} | ${warmRun.status} |`);
+    console.log('\n> Note: DOMAIN_RATE_LIMIT_RPS affects cold-run speed. Warm run serves directly from the Redis HTML cache without rate limiting.\n');
   } catch (error) {
     console.error('\nBenchmark failed:', error.response?.data || error.message);
     process.exit(1);
