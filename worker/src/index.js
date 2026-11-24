@@ -1,56 +1,76 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import mongoose from 'mongoose';
 import { Worker } from 'bullmq';
+import { QUEUE_NAME } from '@scraper/shared';
 import { redisConnection } from './config/redis.js';
+import { connectDB } from './config/db.js';
+import { processScrapeJob } from './processor.js';
 import { logger } from './utils/logger.js';
 
-const QUEUE_NAME = process.env.QUEUE_NAME || 'scrape';
+const concurrency = parseInt(process.env.WORKER_CONCURRENCY || '5', 10);
 
 let worker;
 
-try {
-  worker = new Worker(
-    QUEUE_NAME,
-    async (job) => {
-      logger.info({ jobId: job.id, name: job.name, data: job.data }, 'Processing scrape job');
-      // Scraping logic placeholder
-      return { status: 'success' };
-    },
-    {
-      connection: redisConnection,
+const startWorker = async () => {
+  try {
+    try {
+      await connectDB();
+    } catch (dbErr) {
+      logger.warn('Worker starting without immediate MongoDB connection (is Docker running?)');
     }
-  );
 
-  worker.on('ready', () => {
-    logger.info('worker ready');
-  });
+    worker = new Worker(
+      QUEUE_NAME,
+      async (job) => {
+        return await processScrapeJob(job);
+      },
+      {
+        connection: redisConnection,
+        concurrency,
+      }
+    );
 
-  worker.on('error', (err) => {
-    logger.error({ err: err.message }, 'BullMQ worker error');
-  });
+    worker.on('ready', () => {
+      logger.info({ queue: QUEUE_NAME, concurrency }, 'worker ready');
+    });
 
-  worker.on('failed', (job, err) => {
-    logger.error({ jobId: job?.id, err: err.message }, 'Job execution failed');
-  });
+    worker.on('error', (err) => {
+      logger.error({ err: err.message }, 'BullMQ worker error');
+    });
 
-  worker.on('completed', (job) => {
-    logger.info({ jobId: job?.id }, 'Job completed');
-  });
+    worker.on('failed', (job, err) => {
+      logger.error(
+        {
+          jobId: job?.data?.jobId,
+          runId: job?.data?.runId,
+          url: job?.data?.url,
+          err: err.message,
+        },
+        'Job attempt failed'
+      );
+    });
 
-  // Explicit log to verify bootstrap initialization
-  logger.info('worker ready');
-} catch (error) {
-  logger.error({ err: error.message }, 'Failed to initialize worker');
-}
+    logger.info({ queue: QUEUE_NAME, concurrency }, 'worker ready');
 
-const shutdown = async (signal) => {
-  logger.info(`${signal} received: closing BullMQ worker`);
-  if (worker) {
-    await worker.close();
+    const shutdown = async (signal) => {
+      logger.info(`${signal} received: closing BullMQ worker`);
+      if (worker) {
+        await worker.close();
+      }
+      try {
+        await mongoose.disconnect();
+      } catch (_) {}
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  } catch (error) {
+    logger.error({ err: error.message }, 'Failed to start worker');
+    process.exit(1);
   }
-  process.exit(0);
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+startWorker();

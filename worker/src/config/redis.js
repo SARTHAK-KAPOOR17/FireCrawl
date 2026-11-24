@@ -4,3 +4,4 @@ export const redisConnection = {
   password: process.env.REDIS_PASSWORD || undefined,
   maxRetriesPerRequest: null,
 };
+

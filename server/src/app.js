@@ -8,6 +8,7 @@ import { logger } from './utils/logger.js';
 import { redis } from './config/redis.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import jobsRoutes from './modules/jobs/jobs.routes.js';
 
 const app = express();
 
@@ -44,6 +45,9 @@ app.get('/health', (req, res) => {
 
 // Authentication routes
 app.use('/auth', authRoutes);
+
+// Jobs routes
+app.use('/jobs', jobsRoutes);
 
 // Centralized error handler
 app.use(errorHandler);

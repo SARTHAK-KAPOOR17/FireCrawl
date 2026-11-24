@@ -9,9 +9,13 @@
     "start": "node src/index.js"
   },
   "dependencies": {
+    "@scraper/shared": "*",
+    "axios": "^1.7.9",
     "bullmq": "^5.34.8",
+    "cheerio": "^1.0.0",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",
+    "mongoose": "^8.9.5",
     "pino": "^9.6.0"
   },
   "devDependencies": {
