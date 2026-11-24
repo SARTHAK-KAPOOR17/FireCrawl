@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Plus, Trash2, ArrowLeft, Info, HelpCircle } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Info, HelpCircle, Sparkles } from 'lucide-react';
 
 export default function CreateJob() {
   const navigate = useNavigate();
@@ -18,6 +18,7 @@ export default function CreateJob() {
     { key: 'price', value: '.price' },
   ]);
   const [mode, setMode] = useState('static');
+  const [aiFallback, setAiFallback] = useState(false);
   const [runNow, setRunNow] = useState(true);
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState({});
@@ -110,6 +111,7 @@ export default function CreateJob() {
         urls: validUrls,
         selectors: selectorsObj,
         mode: 'static',
+        aiFallback,
         runNow,
       };
 
@@ -303,6 +305,30 @@ export default function CreateJob() {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* AI Fallback Option */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-700 font-medium select-none">
+                <input
+                  type="checkbox"
+                  checked={aiFallback}
+                  onChange={(e) => setAiFallback(e.target.checked)}
+                  className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 border-slate-300"
+                />
+                <span className="flex items-center gap-1.5">
+                  <span>Enable AI Fallback (Self-healing extraction)</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                </span>
+              </label>
+              {aiFallback && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-xs text-amber-900">
+                  <Sparkles className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    AI fallback uses Gemini to extract fields that selectors miss. Higher accuracy, small token cost.
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Run Immediately Option */}
