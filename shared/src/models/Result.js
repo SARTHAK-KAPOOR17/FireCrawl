@@ -28,6 +28,16 @@ const resultSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    meta: {
+      extractedBy: {
+        type: Map,
+        of: {
+          type: String,
+          enum: ['selector', 'suggested', 'ai'],
+        },
+        default: () => new Map(),
+      },
+    },
   },
   {
     timestamps: false,

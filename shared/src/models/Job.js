@@ -43,6 +43,18 @@ const jobSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    suggestedSelectors: {
+      type: Map,
+      of: new mongoose.Schema(
+        {
+          selector: { type: String, required: true },
+          verifiedAt: { type: Date, default: Date.now },
+          sampleUrl: { type: String, default: null },
+        },
+        { _id: false }
+      ),
+      default: () => new Map(),
+    },
   },
   {
     timestamps: true,
