@@ -59,6 +59,14 @@ const jobRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    duplicatesSkipped: {
+      type: Number,
+      default: 0,
+    },
+    robotsBlocked: {
+      type: Number,
+      default: 0,
+    },
     cacheHits: {
       type: Number,
       default: 0,

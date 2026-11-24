@@ -10,22 +10,34 @@ export async function recordOutcomeAndFinalizeRun({
   runId,
   url,
   outcome,
+  skipReason = null,
+  cacheHit = false,
   error = null,
   models = { Job, JobRun },
 }) {
   const { Job: JobModel, JobRun: JobRunModel } = models;
 
-  const incField =
-    outcome === 'scraped'
-      ? 'pagesScraped'
-      : outcome === 'skipped'
-      ? 'pagesSkipped'
-      : 'pagesFailed';
+  const incOps = {};
+
+  if (outcome === 'scraped') {
+    incOps.pagesScraped = 1;
+  } else if (outcome === 'skipped') {
+    incOps.pagesSkipped = 1;
+    if (skipReason === 'duplicate') {
+      incOps.duplicatesSkipped = 1;
+    } else if (skipReason === 'robots' || error?.code === 'ROBOTS_DISALLOWED') {
+      incOps.robotsBlocked = 1;
+    }
+  } else {
+    incOps.pagesFailed = 1;
+  }
+
+  if (cacheHit) {
+    incOps.cacheHits = 1;
+  }
 
   const updateOps = {
-    $inc: {
-      [incField]: 1,
-    },
+    $inc: incOps,
   };
 
   if (outcome === 'failed' && error) {
@@ -102,3 +114,16 @@ export async function recordOutcomeAndFinalizeRun({
 
   return updatedRun;
 }
+
+/**
+ * Atomically increments cacheHits counter for a JobRun
+ */
+export async function recordCacheHit({ runId, models = { JobRun } }) {
+  const { JobRun: JobRunModel } = models;
+  return await JobRunModel.findByIdAndUpdate(
+    runId,
+    { $inc: { cacheHits: 1 } },
+    { new: true }
+  );
+}
+
