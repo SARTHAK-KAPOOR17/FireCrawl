@@ -71,6 +71,34 @@ const jobRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    aiFallbackPages: {
+      type: Number,
+      default: 0,
+    },
+    aiCalls: {
+      type: Number,
+      default: 0,
+    },
+    aiCacheHits: {
+      type: Number,
+      default: 0,
+    },
+    aiSuccess: {
+      type: Number,
+      default: 0,
+    },
+    aiFailures: {
+      type: Number,
+      default: 0,
+    },
+    aiTokensIn: {
+      type: Number,
+      default: 0,
+    },
+    aiTokensOut: {
+      type: Number,
+      default: 0,
+    },
     failureReasons: {
       type: Map,
       of: Number,

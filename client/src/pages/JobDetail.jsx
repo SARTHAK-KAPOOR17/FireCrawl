@@ -24,6 +24,7 @@ import {
   Calendar,
   AlertTriangle,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react';
 
 export default function JobDetail() {
@@ -48,6 +49,11 @@ export default function JobDetail() {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState(null);
+
+  // Suggestions State (Self-Healing Selectors)
+  const [suggestions, setSuggestions] = useState({});
+  const [selectedSuggestions, setSelectedSuggestions] = useState([]);
+  const [suggestionsOperating, setSuggestionsOperating] = useState(false);
 
   // Job Actions State
   const [isOperating, setIsOperating] = useState(false);
@@ -78,6 +84,7 @@ export default function JobDetail() {
       fetchJob();
       fetchResults(1);
       fetchRuns();
+      fetchSuggestions();
     },
   });
 
@@ -142,16 +149,58 @@ export default function JobDetail() {
     }
   }, [jobId, toast]);
 
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const response = await api.get(`/jobs/${jobId}/suggestions`);
+      setSuggestions(response.data?.suggestedSelectors || {});
+    } catch (_) {}
+  }, [jobId]);
+
   // Initial load
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       await fetchJob();
-      await Promise.all([fetchResults(1), fetchRuns()]);
+      await Promise.all([fetchResults(1), fetchRuns(), fetchSuggestions()]);
       setLoading(false);
     };
     init();
-  }, [fetchJob, fetchResults, fetchRuns]);
+  }, [fetchJob, fetchResults, fetchRuns, fetchSuggestions]);
+
+  const handleToggleSelectSuggestion = (field) => {
+    setSelectedSuggestions((prev) =>
+      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
+    );
+  };
+
+  const handleApplySuggestions = async () => {
+    if (selectedSuggestions.length === 0) return;
+    setSuggestionsOperating(true);
+    try {
+      await api.post(`/jobs/${jobId}/suggestions/apply`, { fields: selectedSuggestions });
+      toast.success('Applied selected suggestions to job selectors!');
+      setSelectedSuggestions([]);
+      await Promise.all([fetchJob(), fetchSuggestions()]);
+    } catch (err) {
+      toast.error(err.friendlyMessage || 'Failed to apply suggestions');
+    } finally {
+      setSuggestionsOperating(false);
+    }
+  };
+
+  const handleClearSuggestions = async () => {
+    setSuggestionsOperating(true);
+    try {
+      await api.delete(`/jobs/${jobId}/suggestions`);
+      toast.success('Cleared all suggestions');
+      setSelectedSuggestions([]);
+      await fetchSuggestions();
+    } catch (err) {
+      toast.error(err.friendlyMessage || 'Failed to clear suggestions');
+    } finally {
+      setSuggestionsOperating(false);
+    }
+  };
 
   // Debounced search for results
   useEffect(() => {
@@ -535,9 +584,28 @@ export default function JobDetail() {
                         </td>
                         {selectorKeys.map((key) => {
                           const val = res.data?.[key];
+                          const source = res.meta?.extractedBy?.[key];
                           return (
-                            <td key={key} className="px-6 py-4 text-slate-900 max-w-sm truncate" title={String(val || '')}>
-                              {val !== null && val !== undefined ? String(val) : <span className="text-slate-300">—</span>}
+                            <td key={key} className="px-6 py-4 text-slate-900 max-w-sm" title={String(val || '')}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate">
+                                  {val !== null && val !== undefined ? String(val) : <span className="text-slate-300">—</span>}
+                                </span>
+                                {val !== null && val !== undefined && source && (
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
+                                      source === 'ai'
+                                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                        : source === 'suggested'
+                                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                        : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                    }`}
+                                  >
+                                    {source === 'ai' && <Sparkles className="w-2.5 h-2.5 mr-0.5 text-amber-600" />}
+                                    {source}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
@@ -608,6 +676,7 @@ export default function JobDetail() {
                       <th className="px-6 py-3.5">Skipped / Duplicates</th>
                       <th className="px-6 py-3.5">Robots Blocked</th>
                       <th className="px-6 py-3.5">Cache Hits</th>
+                      <th className="px-6 py-3.5">AI Calls</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -662,15 +731,45 @@ export default function JobDetail() {
                             <td className="px-6 py-4 text-blue-600 font-medium text-xs">
                               {r.cacheHits || 0}
                             </td>
+                            <td className="px-6 py-4 text-xs">
+                              {r.aiCalls > 0 ? (
+                                <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                                  <Sparkles className="w-3 h-3 text-amber-500" />
+                                  {r.aiCalls} ({r.aiFallbackPages || 0} pgs)
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </td>
                           </tr>
 
                           {/* Expandable details row for failures */}
                           {isExpanded && (
                             <tr className="bg-slate-50/90 border-b border-slate-200/80">
-                              <td colSpan={8} className="px-8 py-5 space-y-4">
+                              <td colSpan={9} className="px-8 py-5 space-y-4">
                                 <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
                                   Run Diagnostics ({r._id})
                                 </h4>
+
+                                {/* AI Run Metrics Summary */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-white rounded border border-slate-200 text-xs">
+                                  <div>
+                                    <span className="text-slate-500">AI Calls:</span>{' '}
+                                    <strong className="text-slate-900 ml-1">{r.aiCalls || 0}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">AI Fallback Pages:</span>{' '}
+                                    <strong className="text-slate-900 ml-1">{r.aiFallbackPages || 0}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">Tokens In:</span>{' '}
+                                    <strong className="text-slate-900 ml-1">{r.aiTokensIn || 0}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">Tokens Out:</span>{' '}
+                                    <strong className="text-slate-900 ml-1">{r.aiTokensOut || 0}</strong>
+                                  </div>
+                                </div>
 
                                 {r.failureReasons && Object.keys(r.failureReasons).length > 0 && (
                                   <div>
@@ -761,6 +860,87 @@ export default function JobDetail() {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Self-Healing Selectors Section */}
+          <div className="pt-6 border-t border-slate-100 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  Self-Healing Selectors
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  CSS selectors discovered by AI and verified against page content.
+                </p>
+              </div>
+              {Object.keys(suggestions).length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={suggestionsOperating}
+                    onClick={handleClearSuggestions}
+                    className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                  >
+                    Clear All Suggestions
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={suggestionsOperating || selectedSuggestions.length === 0}
+                    loading={suggestionsOperating}
+                    onClick={handleApplySuggestions}
+                    className="text-xs"
+                  >
+                    Apply Selected ({selectedSuggestions.length})
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {Object.keys(suggestions).length === 0 ? (
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200/80 text-xs text-slate-500 text-center">
+                No self-healing suggestions yet. When AI extracts missing fields, verified CSS selectors will appear here.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(suggestions).map(([field, item]) => {
+                  const isChecked = selectedSuggestions.includes(field);
+                  return (
+                    <div
+                      key={field}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200/80 hover:border-brand-200 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelectSuggestion(field)}
+                          className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 border-slate-300"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs text-slate-900">{field}</span>
+                            <code className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded text-xs font-mono">
+                              {item.selector}
+                            </code>
+                          </div>
+                          {item.sampleUrl && (
+                            <p className="text-[11px] text-slate-400 truncate max-w-md mt-0.5" title={item.sampleUrl}>
+                              Sample: {item.sampleUrl}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400">
+                        {item.verifiedAt ? new Date(item.verifiedAt).toLocaleDateString() : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </Card>
       )}

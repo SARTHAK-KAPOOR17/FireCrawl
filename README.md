@@ -77,21 +77,28 @@ npm run dev --prefix client
 
 ---
 
-## Running Tests
+## Running Tests & Benchmarks
 
 Run unit and integration test suites:
 ```bash
-# Server tests (Jest - auth, jobs, stats, export, exceptions, efficiency)
+# Server tests (Jest - auth, jobs, stats, export, exceptions, efficiency, AI fallback)
 npm test --prefix server
 
 # Client tests (Vitest - UI kit, protected routes, pages, polling hook)
 npm test --prefix client
 ```
 
+### Self-Healing & AI Fallback Benchmark
+Evaluate AI extraction fallback, Redis AI caching, and self-healing selector promotion across 20 sample URLs:
+```bash
+node scripts/ai-benchmark.js
+```
+
 ---
 
 ## Documentation
 
+- [AI Extraction Fallback & Self-Healing](docs/ai-fallback.md)
 - [Realtime Progress Architecture](docs/realtime.md)
 - [Error Handling & Exceptions](docs/errors.md)
 - [Screenshots Directory](docs/screenshots/)

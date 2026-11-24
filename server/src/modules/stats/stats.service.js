@@ -29,6 +29,12 @@ export async function getUserStats({ userId }) {
               $cond: [{ $gt: ['$durationMs', 0] }, '$durationMs', 0],
             },
           },
+          totalAiFallbackPages: { $sum: '$aiFallbackPages' },
+          totalAiCalls: { $sum: '$aiCalls' },
+          totalAiCacheHits: { $sum: '$aiCacheHits' },
+          totalAiSuccess: { $sum: '$aiSuccess' },
+          totalAiTokensIn: { $sum: '$aiTokensIn' },
+          totalAiTokensOut: { $sum: '$aiTokensOut' },
         },
       },
     ]),
@@ -96,6 +102,30 @@ export async function getUserStats({ userId }) {
       ? Number((totalCacheHits / totalProcessed).toFixed(4))
       : 0;
 
+  const totalAiFallbackPages = summary.totalAiFallbackPages || 0;
+  const totalAiCalls = summary.totalAiCalls || 0;
+  const totalAiCacheHits = summary.totalAiCacheHits || 0;
+  const totalAiSuccess = summary.totalAiSuccess || 0;
+  const totalAiTokensIn = summary.totalAiTokensIn || 0;
+  const totalAiTokensOut = summary.totalAiTokensOut || 0;
+
+  const aiFallbackRate =
+    totalPagesScraped > 0
+      ? Number((totalAiFallbackPages / totalPagesScraped).toFixed(4))
+      : 0;
+
+  const aiCacheHitRate =
+    totalAiCalls > 0
+      ? Number((totalAiCacheHits / totalAiCalls).toFixed(4))
+      : 0;
+
+  const aiSuccessRate =
+    totalAiCalls > 0
+      ? Number((totalAiSuccess / totalAiCalls).toFixed(4))
+      : 0;
+
+  const totalTokens = totalAiTokensIn + totalAiTokensOut;
+
   const failureReasons = {};
   for (const item of failureReasonsAgg) {
     if (item._id && item.count) {
@@ -139,5 +169,10 @@ export async function getUserStats({ userId }) {
     robotsBlocked,
     failureReasons,
     runsPerDay,
+    aiFallbackRate,
+    aiCalls: totalAiCalls,
+    aiCacheHitRate,
+    aiSuccessRate,
+    totalTokens,
   };
 }

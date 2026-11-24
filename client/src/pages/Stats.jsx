@@ -14,6 +14,7 @@ import {
   BarChart2,
   Copy,
   ShieldAlert,
+  Sparkles,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -168,6 +169,103 @@ export default function Stats() {
           <p className="mt-1 text-xs text-slate-500">Served directly from Redis HTML cache</p>
         </Card>
       </div>
+
+      {/* AI Fallback Metrics (shown only if aiCalls > 0) */}
+      {stats.aiCalls > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" />
+              AI Fallback Metrics
+            </h2>
+            <p className="text-xs text-slate-500">
+              Usage and efficiency metrics for Gemini self-healing extraction.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* AI Fallback Rate */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  AI Fallback Rate
+                </span>
+                <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-900">
+                  {((stats.aiFallbackRate || 0) * 100).toFixed(1)}%
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Pages where AI fallback was invoked
+              </p>
+            </Card>
+
+            {/* Total AI Calls */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Total AI Calls
+                </span>
+                <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                  <Zap className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-900">
+                  {(stats.aiCalls || 0).toLocaleString()}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {((stats.aiSuccessRate || 0) * 100).toFixed(1)}% success rate
+              </p>
+            </Card>
+
+            {/* AI Cache Hit Rate */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  AI Cache Hit Rate
+                </span>
+                <div className="p-2 rounded-lg bg-purple-50 text-purple-600">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-900">
+                  {((stats.aiCacheHitRate || 0) * 100).toFixed(1)}%
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Zero-token cache responses
+              </p>
+            </Card>
+
+            {/* Tokens Consumed */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Tokens Consumed
+                </span>
+                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-900">
+                  {(stats.totalTokens || 0).toLocaleString()}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Prompt & completion tokens used
+              </p>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* Secondary Efficiency Metrics Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,6 +1,14 @@
 import crypto from 'crypto';
 import axios from 'axios';
-import { Job, JobRun, Result, ErrorCodes } from '@scraper/shared';
+import * as cheerio from 'cheerio';
+import {
+  Job,
+  JobRun,
+  Result,
+  ErrorCodes,
+  NoDataExtractedError,
+  AiQuotaExceededError,
+} from '@scraper/shared';
 import { scrape as defaultScrape } from './scrapers/staticScraper.js';
 import {
   recordOutcomeAndFinalizeRun as defaultRecordOutcome,
@@ -14,7 +22,35 @@ import { getRedisClient } from './config/redis.js';
 import { defaultEventPublisher } from './services/eventPublisher.js';
 import { classifyError } from './exceptions/classifyError.js';
 import { applyRetryPolicy } from './exceptions/retryPolicy.js';
+import { executeAiFallback as defaultExecuteAiFallback } from './services/aiFallbackService.js';
 import { logger } from './utils/logger.js';
+
+function extractWithCheerio($, rawSelector) {
+  if (!rawSelector || typeof rawSelector !== 'string') return null;
+  const trimmed = rawSelector.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes('@')) {
+    const atIndex = trimmed.lastIndexOf('@');
+    const cssSelector = trimmed.substring(0, atIndex).trim();
+    const attrName = trimmed.substring(atIndex + 1).trim();
+    const el = $(cssSelector).first();
+    if (el.length > 0) {
+      const attrVal = el.attr(attrName);
+      if (attrVal !== undefined && attrVal !== null) {
+        const val = attrVal.trim();
+        return val.length > 0 ? val : null;
+      }
+    }
+  } else {
+    const el = $(trimmed).first();
+    if (el.length > 0) {
+      const textVal = el.text().trim();
+      return textVal.length > 0 ? textVal : null;
+    }
+  }
+  return null;
+}
 
 export async function processScrapeJob(
   job,
@@ -26,6 +62,7 @@ export async function processScrapeJob(
     resultWriter = getResultWriter(),
     checkRobotsFn = checkRobotsAllowed,
     rateLimiterFn = acquireDomainRateLimit,
+    executeAiFallbackFn = defaultExecuteAiFallback,
   } = {}
 ) {
   const { jobId, runId, userId, url, selectors, forceRefresh = false } = job.data;
@@ -53,22 +90,18 @@ export async function processScrapeJob(
   let isCacheHit = false;
 
   try {
-    let cachedHtml = null;
+    let html = null;
 
     if (!forceRefresh && redis) {
-      cachedHtml = await getCachedHtml(redis, url, { forceRefresh });
-      if (cachedHtml) {
+      html = await getCachedHtml(redis, url, { forceRefresh });
+      if (html) {
         isCacheHit = true;
         await recordCacheHit({ runId, models });
         log.info('HTML cache hit');
       }
     }
 
-    let data;
-
-    if (cachedHtml) {
-      data = await scrapeFn({ url, selectors, html: cachedHtml });
-    } else {
+    if (!html) {
       // 1. Check robots.txt (never for cache hits)
       await checkRobotsFn(url, { redis });
 
@@ -77,26 +110,116 @@ export async function processScrapeJob(
       await rateLimiterFn(redis, domain);
 
       // 3. Network fetch
-      if (scrapeFn === defaultScrape) {
-        const response = await axios.get(url, {
-          timeout: 10000,
-          maxRedirects: 5,
-          headers: {
-            'User-Agent':
-              process.env.USER_AGENT ||
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireCrawl/1.0',
-          },
-        });
+      const response = await axios.get(url, {
+        timeout: 10000,
+        maxRedirects: 5,
+        headers: {
+          'User-Agent':
+            process.env.USER_AGENT ||
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireCrawl/1.0',
+        },
+      });
 
-        const html = typeof response.data === 'string' ? response.data : String(response.data || '');
+      html = typeof response.data === 'string' ? response.data : String(response.data || '');
 
-        if (redis) {
-          await setCachedHtml(redis, url, html, { status: response.status });
+      if (redis) {
+        await setCachedHtml(redis, url, html, { status: response.status });
+      }
+    }
+
+    let data = {};
+    const extractedBy = {};
+
+    if (scrapeFn !== defaultScrape) {
+      data = await scrapeFn({ url, selectors, html });
+      for (const k of Object.keys(data || {})) {
+        extractedBy[k] = 'selector';
+      }
+    } else {
+      let jobDoc = null;
+      try {
+        if (models?.Job?.findById) {
+          jobDoc = await models.Job.findById(jobId);
         }
+      } catch (_) {}
 
-        data = await scrapeFn({ url, selectors, html });
-      } else {
-        data = await scrapeFn({ url, selectors });
+      const hasAiFallback = Boolean(jobDoc?.aiFallback ?? job.data?.aiFallback);
+      const suggestedSelectors =
+        jobDoc?.suggestedSelectors instanceof Map
+          ? Object.fromEntries(jobDoc.suggestedSelectors)
+          : jobDoc?.suggestedSelectors || {};
+
+      const $ = cheerio.load(html);
+      const selectorEntries =
+        selectors instanceof Map
+          ? Array.from(selectors.entries())
+          : typeof selectors?.toJSON === 'function'
+          ? Object.entries(selectors.toJSON())
+          : Object.entries(selectors || {});
+
+      // (a) Rule-based Cheerio with user selectors first
+      for (const [field, rawSelector] of selectorEntries) {
+        const val = extractWithCheerio($, rawSelector);
+        if (val !== null) {
+          data[field] = val;
+          extractedBy[field] = 'selector';
+        } else {
+          data[field] = null;
+        }
+      }
+
+      // (b) Suggested selectors for missing fields
+      for (const [field, val] of Object.entries(data)) {
+        if (val === null && suggestedSelectors[field]?.selector) {
+          const suggestedVal = extractWithCheerio($, suggestedSelectors[field].selector);
+          if (suggestedVal !== null) {
+            data[field] = suggestedVal;
+            extractedBy[field] = 'suggested';
+          }
+        }
+      }
+
+      // (c) AI fallback for remaining missing fields
+      const missingFields = Object.keys(data).filter((f) => data[f] === null);
+      if (missingFields.length > 0 && hasAiFallback) {
+        try {
+          const aiResult = await executeAiFallbackFn({
+            jobId,
+            runId,
+            userId,
+            url,
+            originalHtml: html,
+            missingFields,
+            selectors,
+            models,
+            redis,
+          });
+
+          if (aiResult?.values) {
+            for (const field of missingFields) {
+              if (aiResult.values[field] !== undefined && aiResult.values[field] !== null) {
+                data[field] = aiResult.values[field];
+                extractedBy[field] = 'ai';
+              }
+            }
+          }
+        } catch (aiErr) {
+          if (aiErr instanceof AiQuotaExceededError) {
+            log.warn({ userId, runId }, 'AI quota exceeded; skipping AI fallback');
+          } else {
+            log.warn({ err: aiErr.message, code: aiErr.code }, 'AI extraction failed');
+          }
+
+          const hasAnyData = Object.values(data).some((v) => v !== null);
+          if (!hasAnyData) {
+            throw aiErr;
+          }
+        }
+      }
+
+      const hasAnyData = Object.values(data).some((v) => v !== null);
+      if (!hasAnyData) {
+        throw new NoDataExtractedError('Page returned no data for all fields');
       }
     }
 
@@ -111,6 +234,7 @@ export async function processScrapeJob(
       userId,
       url,
       data,
+      meta: { extractedBy },
       contentHash,
       scrapedAt: new Date(),
     });

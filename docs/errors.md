@@ -24,6 +24,10 @@ This document describes the unified error hierarchy, standard error codes, retry
 | `TIMEOUT_ERROR` | 504 | Yes | Target request timed out waiting for connection or data response. |
 | `RATE_LIMIT_WAIT_TIMEOUT` | 504 | Yes | Timed out waiting in the queue for a domain-specific rate limit slot. |
 | `HTTP_STATUS_ERROR` | Dynamic | Dynamic (Yes for 5xx/429, No for 4xx) | Target server returned an error HTTP status. Retryable for server errors (5xx) or rate limits (429). |
+| `AI_EXTRACTION_ERROR` | 502 | Dynamic (Yes for 429/5xx/timeout, No for 4xx) | AI LLM provider returned an error or timed out during fallback extraction. |
+| `AI_INVALID_OUTPUT` | 422 | No | AI model output was malformed, failed Zod validation, or returned invalid field structure. |
+| `AI_QUOTA_EXCEEDED` | 429 | No | Daily AI extraction call quota exceeded for user or instance cap reached. |
+| `AI_DISABLED` | 400 | No | AI fallback was requested on a job where AI fallback is disabled or missing provider configuration. |
 
 ---
 
