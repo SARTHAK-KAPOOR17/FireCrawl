@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { AppError } from '@scraper/shared';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 const CONCURRENCY =
@@ -70,7 +71,7 @@ async function runBenchmark() {
 
     const urls = await collect100BookUrls();
     if (urls.length < 100) {
-      throw new Error(`Expected 100 URLs, but only collected ${urls.length}`);
+      throw new AppError(`Expected 100 URLs, but only collected ${urls.length}`);
     }
 
     console.log('Creating job and queuing scrape run...');

@@ -7,6 +7,7 @@ import { QUEUE_NAME } from '@scraper/shared';
 import { redisConnection } from './config/redis.js';
 import { connectDB } from './config/db.js';
 import { processScrapeJob } from './processor.js';
+import { setupWorkerProcessHandlers } from './exceptions/processHandlers.js';
 import { logger } from './utils/logger.js';
 
 const concurrency = parseInt(process.env.WORKER_CONCURRENCY || '5', 10);
@@ -31,6 +32,8 @@ const startWorker = async () => {
         concurrency,
       }
     );
+
+    setupWorkerProcessHandlers({ worker, mongoose });
 
     worker.on('ready', () => {
       logger.info({ queue: QUEUE_NAME, concurrency }, 'worker ready');

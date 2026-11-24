@@ -1,13 +1,6 @@
-import { Job, JobRun, Result } from '@scraper/shared';
+import { Job, JobRun, Result, NotFoundError, ConflictError } from '@scraper/shared';
 import { getScrapeQueue } from './jobs.queue.js';
 import { logger } from '../../utils/logger.js';
-
-export class JobServiceError extends Error {
-  constructor(message, statusCode = 400) {
-    super(message);
-    this.statusCode = statusCode;
-  }
-}
 
 /**
  * Start a run for a given job and enqueue its URLs to BullMQ
@@ -15,13 +8,13 @@ export class JobServiceError extends Error {
 export async function startJobRun({ jobId, userId, queue = getScrapeQueue() }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
-    throw new JobServiceError('Job not found', 404);
+    throw new NotFoundError('Job not found');
   }
 
   // Check if a run is already running
   const runningRun = await JobRun.findOne({ jobId: job._id, status: 'running' });
   if (runningRun) {
-    throw new JobServiceError('A run is already active for this job', 409);
+    throw new ConflictError('A run is already active for this job');
   }
 
   const jobRun = await JobRun.create({
@@ -132,7 +125,7 @@ export async function getJobs({ userId, page = 1, limit = 10 }) {
 export async function getJobById({ jobId, userId }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
-    throw new JobServiceError('Job not found', 404);
+    throw new NotFoundError('Job not found');
   }
   return job;
 }
@@ -143,7 +136,7 @@ export async function getJobById({ jobId, userId }) {
 export async function deleteJob({ jobId, userId }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
-    throw new JobServiceError('Job not found', 404);
+    throw new NotFoundError('Job not found');
   }
 
   await Promise.all([
@@ -161,7 +154,7 @@ export async function deleteJob({ jobId, userId }) {
 export async function getJobRuns({ jobId, userId }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
-    throw new JobServiceError('Job not found', 404);
+    throw new NotFoundError('Job not found');
   }
 
   const runs = await JobRun.find({ jobId, userId }).sort({ startedAt: -1 });
@@ -181,7 +174,7 @@ export async function getJobResults({
 }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
-    throw new JobServiceError('Job not found', 404);
+    throw new NotFoundError('Job not found');
   }
 
   const query = { jobId: job._id };

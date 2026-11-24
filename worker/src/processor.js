@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { Job, JobRun, Result } from '@scraper/shared';
 import { scrape as defaultScrape } from './scrapers/staticScraper.js';
 import { recordOutcomeAndFinalizeRun as defaultRecordOutcome } from './services/runTracker.js';
+import { classifyError } from './exceptions/classifyError.js';
+import { applyRetryPolicy } from './exceptions/retryPolicy.js';
 import { logger } from './utils/logger.js';
 
 export async function processScrapeJob(
@@ -15,7 +17,6 @@ export async function processScrapeJob(
   const { jobId, runId, userId, url, selectors } = job.data;
   const log = logger.child({ jobId, runId, url, attempt: job.attemptsMade + 1 });
 
-  // When first URL of a run starts, set Job.status = 'running' if it was queued
   try {
     await models.Job.findOneAndUpdate(
       { _id: jobId, status: 'queued' },
@@ -23,7 +24,8 @@ export async function processScrapeJob(
     );
   } catch (_) {}
 
-  let outcome = null; // 'scraped' | 'skipped' | 'failed'
+  let outcome = null;
+  let finalError = null;
 
   try {
     log.info('Scraping URL');
@@ -53,14 +55,17 @@ export async function processScrapeJob(
         throw dbErr;
       }
     }
-  } catch (err) {
-    const isTerminalAttempt = job.attemptsMade + 1 >= (job.opts?.attempts || 3);
+  } catch (rawErr) {
+    const err = classifyError(rawErr);
+    const maxAttempts = job.opts?.attempts || 3;
+    const isTerminalAttempt = !err.retryable || job.attemptsMade + 1 >= maxAttempts;
+
     if (isTerminalAttempt) {
       outcome = 'failed';
-      log.error({ err: err.message }, 'Scrape job failed permanently after max attempts');
+      finalError = err;
+      log.error({ err: err.message, code: err.code }, 'Scrape job terminal failure');
     } else {
-      log.warn({ err: err.message }, 'Scrape attempt failed, will retry with backoff');
-      throw err; // Let BullMQ retry
+      applyRetryPolicy(err, { jobId, runId, url });
     }
   }
 
@@ -68,9 +73,15 @@ export async function processScrapeJob(
     await recordOutcomeFn({
       jobId,
       runId,
+      url,
       outcome,
+      error: finalError,
       models,
     });
+  }
+
+  if (finalError && !finalError.retryable) {
+    applyRetryPolicy(finalError, { jobId, runId, url });
   }
 
   return { outcome };
