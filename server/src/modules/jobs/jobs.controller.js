@@ -75,6 +75,17 @@ export const getJobRuns = async (req, res) => {
   });
 };
 
+export const getLatestRun = async (req, res) => {
+  const run = await jobService.getLatestJobRun({
+    jobId: req.params.id,
+    userId: req.user._id,
+  });
+  return res.status(200).json({
+    success: true,
+    run,
+  });
+};
+
 export const getJobResults = async (req, res) => {
   const page = parseInt(req.query.page || '1', 10);
   const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);

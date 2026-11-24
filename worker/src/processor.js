@@ -11,6 +11,7 @@ import { checkRobotsAllowed } from './services/robotsChecker.js';
 import { acquireDomainRateLimit, extractDomain } from './services/rateLimiter.js';
 import { getResultWriter } from './services/resultWriter.js';
 import { getRedisClient } from './config/redis.js';
+import { defaultEventPublisher } from './services/eventPublisher.js';
 import { classifyError } from './exceptions/classifyError.js';
 import { applyRetryPolicy } from './exceptions/retryPolicy.js';
 import { logger } from './utils/logger.js';
@@ -31,10 +32,19 @@ export async function processScrapeJob(
   const log = logger.child({ jobId, runId, url, attempt: job.attemptsMade + 1 });
 
   try {
-    await models.Job.findOneAndUpdate(
+    const transitioned = await models.Job.findOneAndUpdate(
       { _id: jobId, status: 'queued' },
       { status: 'running' }
     );
+    if (transitioned) {
+      const totalUrls = job.data?.totalUrls || (transitioned.urls ? transitioned.urls.length : 1);
+      await defaultEventPublisher.publishRunStarted({
+        userId: userId ? userId.toString() : '',
+        jobId: jobId.toString(),
+        runId: runId.toString(),
+        totalUrls,
+      });
+    }
   } catch (_) {}
 
   let outcome = null;
@@ -144,6 +154,7 @@ export async function processScrapeJob(
       skipReason,
       cacheHit: isCacheHit,
       error: finalError,
+      userId,
       models,
     });
   }

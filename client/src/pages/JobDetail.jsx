@@ -54,18 +54,50 @@ export default function JobDetail() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
-  // Live polling hook for active runs
-  const { run: activeRun, progress, isFinished, isPolling, refetch: refetchActiveRun } = useRunProgress(
-    jobId,
-    {
-      onComplete: (completedRun) => {
-        toast.info(`Job run finished with status: ${completedRun.status}`);
-        fetchJob();
-        fetchResults(1);
-        fetchRuns();
-      },
+  // Live socket & polling progress hook for active runs
+  const {
+    run: activeRun,
+    status: runStatus,
+    scraped,
+    failed,
+    skipped,
+    total,
+    percent: progress,
+    recentPages,
+    isFinished,
+    isPolling,
+    isConnected,
+    refetch: refetchActiveRun,
+  } = useRunProgress(jobId, {
+    onComplete: (finishedEvent) => {
+      if (finishedEvent.status === 'completed') {
+        toast.success(`Job run completed successfully!`);
+      } else {
+        toast.error(`Job run finished with status: ${finishedEvent.status || 'failed'}`);
+      }
+      fetchJob();
+      fetchResults(1);
+      fetchRuns();
+    },
+  });
+
+  // Auto-scroll state for Live Log panel
+  const liveLogContainerRef = React.useRef(null);
+  const liveLogEndRef = React.useRef(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  const handleLogScroll = () => {
+    const el = liveLogContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    setAutoScroll(isNearBottom);
+  };
+
+  useEffect(() => {
+    if (autoScroll && liveLogEndRef.current) {
+      liveLogEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  );
+  }, [recentPages, autoScroll]);
 
   const fetchJob = useCallback(async () => {
     try {
@@ -264,26 +296,124 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {/* Live Run Progress Bar (active when running or queued) */}
-      {isJobRunning && activeRun && (
-        <Card className="p-5 border-blue-200 bg-blue-50/40">
-          <div className="flex items-center justify-between text-sm mb-2">
+      {/* Live Run Progress Bar & Live Log Panel */}
+      {(isJobRunning || recentPages.length > 0) && (
+        <Card className="p-5 border-blue-200 bg-blue-50/30 space-y-4">
+          <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
-              <Spinner size="sm" />
+              {isJobRunning ? (
+                <Spinner size="sm" />
+              ) : (
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
+              )}
               <span className="font-semibold text-blue-900">
-                Scrape run in progress...
+                {isJobRunning ? 'Scrape run in progress...' : 'Latest Run Outcomes'}
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  isConnected
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {isConnected ? 'Realtime (Socket.io)' : 'Polling Fallback'}
               </span>
             </div>
             <span className="text-xs font-mono font-bold text-blue-800">
-              {progress}% ({((activeRun.pagesScraped || 0) + (activeRun.pagesFailed || 0) + (activeRun.pagesSkipped || 0))} / {activeRun.totalUrls} URLs)
+              {progress}% ({scraped + failed + skipped} / {total || activeRun?.totalUrls || 0} URLs)
             </span>
           </div>
+
           <div className="w-full bg-blue-200 rounded-full h-2.5 overflow-hidden">
             <div
               className="bg-brand-500 h-2.5 rounded-full transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
+
+          <div className="flex items-center gap-4 text-xs font-medium text-slate-600 pt-1 border-t border-blue-100">
+            <span className="text-emerald-700">Scraped: {scraped}</span>
+            <span className="text-rose-700">Failed: {failed}</span>
+            <span className="text-amber-700">Skipped: {skipped}</span>
+            <span className="text-blue-700">Total: {total || activeRun?.totalUrls || 0}</span>
+          </div>
+
+          {/* Live Log Panel */}
+          {recentPages.length > 0 && (
+            <div className="mt-3 bg-slate-900 rounded-lg p-3 text-slate-100 font-mono text-xs shadow-inner">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] text-slate-400">
+                <span className="font-semibold text-slate-300">
+                  Live Log ({recentPages.length} pages recorded)
+                </span>
+                <div className="flex items-center gap-2">
+                  {!autoScroll && (
+                    <button
+                      onClick={() => {
+                        setAutoScroll(true);
+                        liveLogEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                    >
+                      Resume auto-scroll
+                    </button>
+                  )}
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      autoScroll ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                  />
+                  <span>{autoScroll ? 'Auto-scrolling' : 'Scroll paused'}</span>
+                </div>
+              </div>
+
+              <div
+                ref={liveLogContainerRef}
+                onScroll={handleLogScroll}
+                className="max-h-56 overflow-y-auto divide-y divide-slate-800/60 mt-2 space-y-1.5 pr-1"
+              >
+                {recentPages.map((pageItem, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-3 py-1 text-[11px]"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 truncate">
+                      {pageItem.outcome === 'scraped' && (
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      )}
+                      {pageItem.outcome === 'skipped' && (
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      )}
+                      {pageItem.outcome === 'failed' && (
+                        <span className="w-3.5 h-3.5 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+                          ✕
+                        </span>
+                      )}
+                      <span className="truncate text-slate-200" title={pageItem.url}>
+                        {pageItem.url}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {pageItem.cached && (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-sans font-medium">
+                          Cached
+                        </span>
+                      )}
+                      {pageItem.code && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-sans">
+                          {pageItem.code}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-500">
+                        {new Date(pageItem.ts).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div ref={liveLogEndRef} />
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

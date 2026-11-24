@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useToast } from '../context/ToastContext';
+import { useRunProgress } from '../hooks/useRunProgress';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/Badge';
@@ -18,6 +19,26 @@ import {
   Globe,
   Layers,
 } from 'lucide-react';
+
+function JobItemProgressBar({ jobId, isRunning }) {
+  const { percent, scraped, total } = useRunProgress(isRunning ? jobId : null);
+  if (!isRunning) return null;
+
+  return (
+    <div className="mt-1.5 w-28">
+      <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
+        <div
+          className="bg-brand-500 h-1.5 rounded-full transition-all duration-300"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-[10px] text-blue-700 font-mono mt-0.5">
+        <span>{percent}%</span>
+        <span>{scraped}/{total || '?'}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function JobsList() {
   const [jobs, setJobs] = useState([]);
@@ -151,6 +172,12 @@ export default function JobsList() {
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={job.status} />
+                        {(job.status === 'running' || job.status === 'queued') && (
+                          <JobItemProgressBar
+                            jobId={job._id}
+                            isRunning={job.status === 'running' || job.status === 'queued'}
+                          />
+                        )}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                         <span className="inline-flex items-center gap-1.5 font-medium">

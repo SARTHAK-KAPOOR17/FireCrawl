@@ -21,6 +21,21 @@ redis.on('error', (err) => {
   logger.error({ err: err.message }, 'Redis connection error');
 });
 
+export const getRedisConfig = () => ({
+  host: redisHost,
+  port: redisPort,
+  password: redisPassword,
+  lazyConnect: true,
+  maxRetriesPerRequest: 3,
+});
+
+export const createRedisClient = (opts = {}) => {
+  return new Redis({
+    ...getRedisConfig(),
+    ...opts,
+  });
+};
+
 export const connectRedis = async () => {
   try {
     await redis.connect();

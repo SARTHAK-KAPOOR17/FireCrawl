@@ -49,6 +49,7 @@ export async function startJobRun({ jobId, userId, forceRefresh = false, queue =
       selectors: selectorsObj,
       mode: job.mode,
       forceRefresh: Boolean(forceRefresh),
+      totalUrls: job.urls.length,
     },
     opts: {
       attempts: 3,
@@ -160,6 +161,19 @@ export async function getJobRuns({ jobId, userId }) {
 
   const runs = await JobRun.find({ jobId, userId }).sort({ startedAt: -1 });
   return runs;
+}
+
+/**
+ * Get latest run for a job (snapshot for realtime resync)
+ */
+export async function getLatestJobRun({ jobId, userId }) {
+  const job = await Job.findOne({ _id: jobId, userId });
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  const latestRun = await JobRun.findOne({ jobId: job._id, userId }).sort({ startedAt: -1 });
+  return latestRun;
 }
 
 /**

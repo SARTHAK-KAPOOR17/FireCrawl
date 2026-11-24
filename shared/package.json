@@ -10,6 +10,7 @@
     "./constants": "./src/constants.js"
   },
   "dependencies": {
-    "mongoose": "^8.9.5"
+    "mongoose": "^8.9.5",
+    "zod": "^3.25.76"
   }
 }

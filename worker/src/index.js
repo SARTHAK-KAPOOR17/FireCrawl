@@ -8,6 +8,8 @@ import { redisConnection, getRedisClient, closeRedisClient } from './config/redi
 import { connectDB } from './config/db.js';
 import { processScrapeJob } from './processor.js';
 import { getResultWriter } from './services/resultWriter.js';
+import { closePublisherClient } from './services/eventPublisher.js';
+import { getEventThrottle } from './services/eventThrottle.js';
 import { setupWorkerProcessHandlers } from './exceptions/processHandlers.js';
 import { logger } from './utils/logger.js';
 
@@ -38,7 +40,7 @@ const startWorker = async () => {
       }
     );
 
-    setupWorkerProcessHandlers({ worker, mongoose, redis, resultWriter });
+    setupWorkerProcessHandlers({ worker, mongoose, redis, resultWriter, closePublisher: closePublisherClient });
 
     worker.on('ready', () => {
       logger.info({ queue: QUEUE_NAME, concurrency }, 'worker ready');
@@ -64,6 +66,12 @@ const startWorker = async () => {
 
     const shutdown = async (signal) => {
       logger.info(`${signal} received: closing BullMQ worker`);
+      try {
+        await getEventThrottle().flushAll();
+      } catch (_) {}
+      try {
+        await closePublisherClient();
+      } catch (_) {}
       try {
         if (resultWriter && typeof resultWriter.shutdown === 'function') {
           await resultWriter.shutdown();

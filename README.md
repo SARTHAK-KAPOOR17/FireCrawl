@@ -92,5 +92,6 @@ npm test --prefix client
 
 ## Documentation
 
+- [Realtime Progress Architecture](docs/realtime.md)
 - [Error Handling & Exceptions](docs/errors.md)
 - [Screenshots Directory](docs/screenshots/)
