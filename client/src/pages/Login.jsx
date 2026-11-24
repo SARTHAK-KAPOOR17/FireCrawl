@@ -1,13 +1,21 @@
-import React, { useMemo } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
-  const errorKey = searchParams.get('error');
+  const navigate = useNavigate();
+  const oauthErrorKey = searchParams.get('error');
 
-  const errorMessage = useMemo(() => {
-    switch (errorKey) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [formError, setFormError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const oauthErrorMessage = useMemo(() => {
+    switch (oauthErrorKey) {
       case 'no_email':
         return 'No usable email found on your OAuth profile. Please ensure your email is verified and accessible.';
       case 'unverified_email':
@@ -21,9 +29,53 @@ export default function Login() {
       case 'server_error':
         return 'A server error occurred during authentication.';
       default:
-        return errorKey ? `Authentication error: ${errorKey}` : null;
+        return oauthErrorKey ? `Authentication error: ${oauthErrorKey}` : null;
     }
-  }, [errorKey]);
+  }, [oauthErrorKey]);
+
+  const displayedError = formError || oauthErrorMessage;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!email || !password) {
+      setFormError('Email and password are required.');
+      return;
+    }
+
+    if (isSignUp && password.length < 8) {
+      setFormError('Password must be at least 8 characters long.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const endpoint = isSignUp ? '/auth/signup' : '/auth/login';
+      const payload = isSignUp ? { email, password, name } : { email, password };
+
+      const response = await api.post(endpoint, payload);
+
+      if (response.data?.success && response.data?.token) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        api.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+        navigate('/', { replace: true });
+      } else {
+        throw new Error(response.data?.message || 'Authentication failed');
+      }
+    } catch (err) {
+      const errResponse = err.response?.data;
+      const errorMsg =
+        errResponse?.errors?.[0]?.message ||
+        errResponse?.message ||
+        err.message ||
+        'Authentication failed. Please check your credentials.';
+      setFormError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleOAuthLogin = (provider) => {
     const baseURL = api.defaults.baseURL || 'http://localhost:5000';
@@ -35,26 +87,48 @@ export default function Login() {
       <div style={styles.card}>
         <div style={styles.header}>
           <Link to="/" style={styles.backLink}>← Back to Home</Link>
-          <h1 style={styles.title}>Sign In to FireCrawl</h1>
-          <p style={styles.subtitle}>Welcome back! Sign in or register below.</p>
+          <h1 style={styles.title}>
+            {isSignUp ? 'Create your Account' : 'Sign In to FireCrawl'}
+          </h1>
+          <p style={styles.subtitle}>
+            {isSignUp
+              ? 'Sign up with email or an OAuth provider to get started.'
+              : 'Welcome back! Sign in or register below.'}
+          </p>
         </div>
 
-        {errorMessage && (
+        {displayedError && (
           <div style={styles.errorBox}>
-            <strong>Authentication Error</strong>
-            <p style={{ marginTop: '4px', fontSize: '0.9rem' }}>{errorMessage}</p>
+            <strong>Error:</strong> {displayedError}
           </div>
         )}
 
-        {/* Email Login Form (Phase 1 placeholder) */}
-        <form style={styles.form} onSubmit={(e) => e.preventDefault()}>
+        {/* Email Login/Signup Form */}
+        <form style={styles.form} onSubmit={handleSubmit}>
+          {isSignUp && (
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Name (Optional)</label>
+              <input
+                type="text"
+                placeholder="Jane Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={styles.input}
+                disabled={loading}
+              />
+            </div>
+          )}
+
           <div style={styles.inputGroup}>
             <label style={styles.label}>Email Address</label>
             <input
               type="email"
               placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               style={styles.input}
-              disabled
+              required
+              disabled={loading}
             />
           </div>
 
@@ -63,19 +137,49 @@ export default function Login() {
             <input
               type="password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               style={styles.input}
-              disabled
+              required
+              disabled={loading}
             />
+            {isSignUp && (
+              <span style={styles.hint}>Must be at least 8 characters long</span>
+            )}
           </div>
 
           <button
-            type="button"
-            style={{ ...styles.submitButton, opacity: 0.6, cursor: 'not-allowed' }}
-            disabled
+            type="submit"
+            style={{
+              ...styles.submitButton,
+              opacity: loading ? 0.7 : 1,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+            disabled={loading}
           >
-            Sign in with Email (Coming in Phase 1)
+            {loading
+              ? 'Processing...'
+              : isSignUp
+              ? 'Create Account'
+              : 'Sign In with Email'}
           </button>
         </form>
+
+        <div style={styles.toggleContainer}>
+          <span style={styles.toggleText}>
+            {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setFormError(null);
+            }}
+            style={styles.toggleButton}
+          >
+            {isSignUp ? 'Sign In' : 'Sign Up'}
+          </button>
+        </div>
 
         <div style={styles.divider}>
           <span style={styles.dividerLine}></span>
@@ -117,7 +221,11 @@ export default function Login() {
             style={styles.githubButton}
           >
             <svg style={styles.oauthIcon} viewBox="0 0 24 24" fill="currentColor">
-              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+              />
             </svg>
             Continue with GitHub
           </button>
@@ -172,6 +280,7 @@ const styles = {
     padding: '12px 16px',
     borderRadius: '8px',
     marginBottom: '20px',
+    fontSize: '0.9rem',
   },
   form: {
     display: 'flex',
@@ -193,7 +302,12 @@ const styles = {
     borderRadius: '6px',
     border: '1px solid #cbd5e1',
     fontSize: '0.95rem',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
+    outline: 'none',
+  },
+  hint: {
+    fontSize: '0.75rem',
+    color: '#64748b',
   },
   submitButton: {
     backgroundColor: '#ea580c',
@@ -203,7 +317,28 @@ const styles = {
     borderRadius: '6px',
     fontWeight: '600',
     fontSize: '0.95rem',
-    marginTop: '4px',
+    marginTop: '6px',
+    transition: 'background-color 0.2s',
+  },
+  toggleContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    marginTop: '16px',
+    fontSize: '0.9rem',
+  },
+  toggleText: {
+    color: '#64748b',
+  },
+  toggleButton: {
+    background: 'none',
+    border: 'none',
+    color: '#ea580c',
+    fontWeight: '600',
+    cursor: 'pointer',
+    padding: 0,
+    fontSize: '0.9rem',
   },
   divider: {
     display: 'flex',
