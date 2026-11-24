@@ -1,5 +1,10 @@
 import bcrypt from 'bcryptjs';
 import passport from 'passport';
+import {
+  ConflictError,
+  AuthenticationError,
+  ValidationError,
+} from '@scraper/shared';
 import { User } from '../../models/User.js';
 import { generateToken } from '../../utils/jwt.js';
 import {
@@ -12,10 +17,6 @@ import { logger } from '../../utils/logger.js';
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
-/**
- * Register a new user with email and password
- * POST /auth/signup
- */
 export const signupHandler = async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
@@ -23,10 +24,7 @@ export const signupHandler = async (req, res, next) => {
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists',
-      });
+      throw new ConflictError('An account with this email already exists');
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -41,7 +39,6 @@ export const signupHandler = async (req, res, next) => {
     });
 
     const token = generateToken(user);
-
     logger.info({ userId: user._id, email: user.email }, 'User signed up successfully via email');
 
     return res.status(201).json({
@@ -54,10 +51,6 @@ export const signupHandler = async (req, res, next) => {
   }
 };
 
-/**
- * Log in an existing user with email and password
- * POST /auth/login
- */
 export const loginHandler = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -65,24 +58,16 @@ export const loginHandler = async (req, res, next) => {
 
     const user = await User.findOne({ email: normalizedEmail });
 
-    // Use generic "Invalid credentials" if user does not exist OR if user has no passwordHash (OAuth-only)
     if (!user || !user.passwordHash) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-      });
+      throw new AuthenticationError('Invalid credentials');
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-      });
+      throw new AuthenticationError('Invalid credentials');
     }
 
     const token = generateToken(user);
-
     logger.info({ userId: user._id, email: user.email }, 'User logged in successfully via email');
 
     return res.status(200).json({
@@ -95,10 +80,6 @@ export const loginHandler = async (req, res, next) => {
   }
 };
 
-/**
- * Get current authenticated user
- * GET /auth/me
- */
 export const getMeHandler = async (req, res) => {
   return res.status(200).json({
     success: true,
@@ -106,9 +87,6 @@ export const getMeHandler = async (req, res) => {
   });
 };
 
-/**
- * Initiate Google OAuth with CSRF state
- */
 export const initiateGoogleAuth = async (req, res, next) => {
   try {
     const state = await generateOAuthState('google');
@@ -122,9 +100,6 @@ export const initiateGoogleAuth = async (req, res, next) => {
   }
 };
 
-/**
- * Handle Google OAuth callback
- */
 export const handleGoogleCallback = async (req, res, next) => {
   if (req.query.error) {
     logger.warn({ error: req.query.error }, 'Google OAuth returned error');
@@ -160,9 +135,6 @@ export const handleGoogleCallback = async (req, res, next) => {
   })(req, res, next);
 };
 
-/**
- * Initiate GitHub OAuth with CSRF state
- */
 export const initiateGithubAuth = async (req, res, next) => {
   try {
     const state = await generateOAuthState('github');
@@ -176,9 +148,6 @@ export const initiateGithubAuth = async (req, res, next) => {
   }
 };
 
-/**
- * Handle GitHub OAuth callback
- */
 export const handleGithubCallback = async (req, res, next) => {
   if (req.query.error) {
     logger.warn({ error: req.query.error }, 'GitHub OAuth returned error');
@@ -214,18 +183,11 @@ export const handleGithubCallback = async (req, res, next) => {
   })(req, res, next);
 };
 
-/**
- * Exchange one-time handoff code for JWT and user
- * POST /auth/oauth/exchange
- */
-export const exchangeCodeHandler = async (req, res) => {
+export const exchangeCodeHandler = async (req, res, next) => {
   try {
     const { code } = req.body;
     if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Authorization code is required',
-      });
+      throw new ValidationError('Authorization code is required');
     }
 
     const { token, user } = await exchangeOAuthCode(code);
@@ -236,13 +198,6 @@ export const exchangeCodeHandler = async (req, res) => {
       user,
     });
   } catch (err) {
-    logger.warn({ err: err.message }, 'Code exchange error');
-    return res.status(400).json({
-      success: false,
-      message:
-        err.message === 'INVALID_OR_EXPIRED_CODE'
-          ? 'Invalid or expired authorization code'
-          : err.message || 'Code exchange failed',
-    });
+    next(err);
   }
 };

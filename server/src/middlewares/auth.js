@@ -1,3 +1,4 @@
+import { AuthenticationError } from '@scraper/shared';
 import { verifyToken } from '../utils/jwt.js';
 import { User } from '../models/User.js';
 
@@ -5,10 +6,7 @@ export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required. No token provided.',
-      });
+      throw new AuthenticationError('Authentication required. No token provided.');
     }
 
     const token = authHeader.split(' ')[1];
@@ -16,18 +14,12 @@ export const authenticate = async (req, res, next) => {
     try {
       decoded = verifyToken(token);
     } catch (err) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired token',
-      });
+      throw new AuthenticationError('Invalid or expired token');
     }
 
     const user = await User.findById(decoded.userId).select('-passwordHash');
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User no longer exists',
-      });
+      throw new AuthenticationError('User no longer exists');
     }
 
     req.user = user;
