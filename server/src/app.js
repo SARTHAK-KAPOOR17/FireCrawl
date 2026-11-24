@@ -6,13 +6,16 @@ import mongoose from 'mongoose';
 import passport from 'passport';
 import { logger } from './utils/logger.js';
 import { redis } from './config/redis.js';
-import { errorHandler } from './middlewares/errorHandler.js';
+import { errorHandler } from './exceptions/errorHandler.js';
+import { requestId } from './exceptions/requestId.js';
+import { notFoundHandler } from './exceptions/notFoundHandler.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import jobsRoutes from './modules/jobs/jobs.routes.js';
 
 const app = express();
 
 // Security and utility middlewares
+app.use(requestId);
 app.use(helmet());
 app.use(
   cors({
@@ -20,7 +23,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(pinoHttp({ logger }));
+app.use(pinoHttp({ logger, genReqId: (req) => req.id }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -48,6 +51,9 @@ app.use('/auth', authRoutes);
 
 // Jobs routes
 app.use('/jobs', jobsRoutes);
+
+// 404 handler for unknown routes
+app.use(notFoundHandler);
 
 // Centralized error handler
 app.use(errorHandler);
