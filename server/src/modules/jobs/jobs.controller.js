@@ -13,9 +13,11 @@ export const createJob = async (req, res) => {
 };
 
 export const runJob = async (req, res) => {
+  const forceRefresh = Boolean(req.body?.forceRefresh);
   const { jobRun, job } = await jobService.startJobRun({
     jobId: req.params.id,
     userId: req.user._id,
+    forceRefresh,
   });
   return res.status(200).json({
     success: true,

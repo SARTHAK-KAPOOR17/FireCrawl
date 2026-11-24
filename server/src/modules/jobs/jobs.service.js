@@ -5,7 +5,7 @@ import { logger } from '../../utils/logger.js';
 /**
  * Start a run for a given job and enqueue its URLs to BullMQ
  */
-export async function startJobRun({ jobId, userId, queue = getScrapeQueue() }) {
+export async function startJobRun({ jobId, userId, forceRefresh = false, queue = getScrapeQueue() }) {
   const job = await Job.findOne({ _id: jobId, userId });
   if (!job) {
     throw new NotFoundError('Job not found');
@@ -48,6 +48,7 @@ export async function startJobRun({ jobId, userId, queue = getScrapeQueue() }) {
       url,
       selectors: selectorsObj,
       mode: job.mode,
+      forceRefresh: Boolean(forceRefresh),
     },
     opts: {
       attempts: 3,
@@ -77,7 +78,7 @@ export async function startJobRun({ jobId, userId, queue = getScrapeQueue() }) {
  * Create a new Job and optionally run immediately
  */
 export async function createJob({ userId, data, queue }) {
-  const { name, urls, selectors, mode, schedule, aiFallback, runNow = true } = data;
+  const { name, urls, selectors, mode, schedule, aiFallback, runNow = true, forceRefresh = false } = data;
 
   const job = await Job.create({
     userId,
@@ -92,7 +93,7 @@ export async function createJob({ userId, data, queue }) {
 
   let run = null;
   if (runNow !== false) {
-    const runResult = await startJobRun({ jobId: job._id, userId, queue });
+    const runResult = await startJobRun({ jobId: job._id, userId, forceRefresh, queue });
     run = runResult.jobRun;
   }
 

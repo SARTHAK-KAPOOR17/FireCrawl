@@ -25,6 +25,11 @@ export const createJobSchema = z.object({
   schedule: z.string().nullable().optional(),
   aiFallback: z.boolean().default(false).optional(),
   runNow: z.boolean().default(true).optional(),
+  forceRefresh: z.boolean().default(false).optional(),
+});
+
+export const runJobSchema = z.object({
+  forceRefresh: z.boolean().default(false).optional(),
 });
 
 export const paginationQuerySchema = z.object({
