@@ -1,5 +1,6 @@
 import { Job, JobRun } from '@scraper/shared';
 import { logger } from '../utils/logger.js';
+import { getEventThrottle } from './eventThrottle.js';
 
 /**
  * Atomically records terminal URL outcome and finalizes run if all URLs are completed.
@@ -13,7 +14,9 @@ export async function recordOutcomeAndFinalizeRun({
   skipReason = null,
   cacheHit = false,
   error = null,
+  userId = null,
   models = { Job, JobRun },
+  throttle = getEventThrottle(),
 }) {
   const { Job: JobModel, JobRun: JobRunModel } = models;
 
@@ -71,6 +74,28 @@ export async function recordOutcomeAndFinalizeRun({
   const pagesFailed = updatedRun.pagesFailed || 0;
   const pagesSkipped = updatedRun.pagesSkipped || 0;
   const totalProcessed = pagesScraped + pagesFailed + pagesSkipped;
+  const resolvedUserId = (userId || updatedRun.userId)?.toString();
+
+  if (throttle && resolvedUserId) {
+    throttle.recordPageDone({
+      userId: resolvedUserId,
+      jobId: jobId.toString(),
+      runId: runId.toString(),
+      page: {
+        url,
+        outcome,
+        code: error?.code,
+        cached: Boolean(cacheHit),
+      },
+      progress: {
+        scraped: pagesScraped,
+        failed: pagesFailed,
+        skipped: pagesSkipped,
+        total: updatedRun.totalUrls,
+        cacheHits: updatedRun.cacheHits || 0,
+      },
+    });
+  }
 
   if (totalProcessed >= updatedRun.totalUrls) {
     const now = new Date();
@@ -94,6 +119,21 @@ export async function recordOutcomeAndFinalizeRun({
     );
 
     if (finalizedRun) {
+      if (throttle && resolvedUserId) {
+        await throttle.flushAndFinish({
+          userId: resolvedUserId,
+          jobId: jobId.toString(),
+          runId: runId.toString(),
+          status: finalStatus,
+          durationMs,
+          scraped: finalizedRun.pagesScraped,
+          failed: finalizedRun.pagesFailed,
+          skipped: finalizedRun.pagesSkipped,
+          total: finalizedRun.totalUrls,
+          cacheHits: finalizedRun.cacheHits || 0,
+        });
+      }
+
       logger.info(
         {
           jobId,

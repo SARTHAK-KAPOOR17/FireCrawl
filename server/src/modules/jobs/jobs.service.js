@@ -49,6 +49,7 @@ export async function startJobRun({ jobId, userId, forceRefresh = false, queue =
       selectors: selectorsObj,
       mode: job.mode,
       forceRefresh: Boolean(forceRefresh),
+      totalUrls: job.urls.length,
     },
     opts: {
       attempts: 3,

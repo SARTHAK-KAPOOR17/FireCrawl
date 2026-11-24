@@ -5,6 +5,7 @@ export function setupWorkerProcessHandlers({
   mongoose,
   redis,
   resultWriter,
+  closePublisher,
   timeout = 5000,
 } = {}) {
   const gracefulShutdown = async (type, error) => {
@@ -20,6 +21,9 @@ export function setupWorkerProcessHandlers({
     forceTimer.unref();
 
     try {
+      if (typeof closePublisher === 'function') {
+        await closePublisher();
+      }
       if (resultWriter && typeof resultWriter.shutdown === 'function') {
         await resultWriter.shutdown();
       }
