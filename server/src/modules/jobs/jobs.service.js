@@ -50,6 +50,7 @@ export async function startJobRun({ jobId, userId, forceRefresh = false, queue =
       mode: job.mode,
       forceRefresh: Boolean(forceRefresh),
       totalUrls: job.urls.length,
+      aiFallback: Boolean(job.aiFallback),
     },
     opts: {
       attempts: 3,
