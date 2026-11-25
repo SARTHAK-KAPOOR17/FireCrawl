@@ -55,7 +55,7 @@
 
 ## System Architecture
 
-FireCrawl decouples client-facing API traffic, asynchronous worker execution, and real-time event streaming across an event-driven microservices architecture:
+FireCrawl decouples client-facing API traffic, asynchronous worker execution, and real-time event streaming across an event-driven microservices architecture. *(For exhaustive pipeline flowcharts, WebSocket sequence diagrams, and database ERDs, see the dedicated [docs/architecture.md](docs/architecture.md) guide).*
 
 ```mermaid
 flowchart TD
@@ -279,6 +279,22 @@ The React SPA client delivers an intuitive, real-time command center:
    - Interactive Recharts diagrams: 14-day daily scraping throughput and terminal failure code breakdown.
    - AI Fallback Metrics: AI Fallback Rate, Total AI Calls, Cache Hit Rate, and Total Tokens Consumed.
 
+### Screenshot Gallery
+
+| Scraping Jobs Command Center | Extracted Results with Provenance Badges |
+| :---: | :---: |
+| ![Jobs Dashboard](docs/screenshots/jobs_list.png) | ![Results with Badges](docs/screenshots/job_detail_results.png) |
+
+| Execution Diagnostics & Failure Analytics | Self-Healing Selectors Review & Promotion |
+| :---: | :---: |
+| ![Run Diagnostics](docs/screenshots/job_detail_progress.png) | ![Self-Healing Selectors](docs/screenshots/job_detail_settings.png) |
+
+| Real-Time Streaming Progress | Platform Analytics & AI Cost KPIs |
+| :---: | :---: |
+| ![Live Progress](docs/screenshots/job_detail_live_progress.png) | ![Analytics Dashboard](docs/screenshots/stats_analytics.png) |
+
+*(See [docs/architecture.md](docs/architecture.md) for full-resolution views and step-by-step walkthroughs).*
+
 ---
 
 ## Getting Started & Local Setup
@@ -415,6 +431,7 @@ npm run build --prefix client
 
 For exhaustive technical specifications, architectural diagrams, and error references, consult the dedicated documentation files:
 
+- 📐 **[Architecture & Working Diagrams](docs/architecture.md)**: Comprehensive working diagrams, end-to-end pipeline flowcharts, WebSocket sequence diagrams, database ERDs, and visual UI walkthrough.
 - 📖 **[AI Extraction Fallback & Self-Healing Selectors](docs/ai-fallback.md)**: Details the Gemini prompt structure, Cheerio selector verification algorithm, token cost controls, and injection defenses.
 - ⚡ **[Real-Time Progress & Streaming Architecture](docs/realtime.md)**: Explains the Redis pub/sub decoupling model, `@socket.io/redis-adapter` horizontal scaling, and 250ms throttling mechanism.
 - 🛡️ **[Error Handling & Exceptions Catalog](docs/errors.md)**: Complete index of HTTP status codes, machine-readable `ErrorCodes`, and BullMQ retry policies across all packages.
